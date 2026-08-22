@@ -1,69 +1,82 @@
-"use client";
-
-import { useCallback, useEffect, useState } from "react";
-import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, CircleDollarSign, Globe2, RefreshCw, ShieldAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 
 type Quote = { symbol: string; label: string; price: number; changePercent: number | null };
 
+type QuoteResponse = { quotes: Quote[]; updatedAt: string };
+
+const money = (value: number, digits = 2) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "--";
+
 export default function Home() {
-  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [data, setData] = useState<QuoteResponse>({ quotes: [], updatedAt: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [updatedAt, setUpdatedAt] = useState("");
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  async function loadQuotes() {
     try {
+      setError("");
       const response = await fetch("/api/quotes", { cache: "no-store" });
-      if (!response.ok) throw new Error("Live market data unavailable");
-      const data = await response.json();
-      setQuotes(Array.isArray(data.quotes) ? data.quotes : []);
-      setUpdatedAt(data.updatedAt || new Date().toISOString());
+      if (!response.ok) throw new Error("Live quote request failed");
+      setData(await response.json());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Live market data unavailable");
+      setError(err instanceof Error ? err.message : "Live data unavailable");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }
 
   useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, 60_000);
-    return () => clearInterval(timer);
-  }, [refresh]);
-
-  const find = (label: string) => quotes.find((quote) => quote.label === label);
-  const featured = [find("Gold"), find("Silver")].filter(Boolean) as Quote[];
-  const watchlist = [find("DXY"), find("USD/INR"), find("Brent"), find("VIX")].filter(Boolean) as Quote[];
+    loadQuotes();
+    const timer = window.setInterval(loadQuotes, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
-    <main className="min-h-screen bg-[#070707] px-4 py-4 text-zinc-100 md:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px] space-y-4">
-        <header className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-3"><div className="rounded-xl bg-amber-300/10 p-2 text-amber-300"><Activity size={20} /></div><div><p className="font-semibold tracking-[0.28em] text-amber-300">GSAT</p><h1 className="text-xl font-semibold md:text-2xl">GOLD & SILVER WAR ROOM</h1></div></div>
-            <p className="mt-2 text-xs text-zinc-500">Free live market-data test build • no paid API key</p>
+    <main className="min-h-screen bg-[#070707] text-zinc-100">
+      <div className="mx-auto max-w-[1500px] space-y-5 p-5 md:p-8">
+        <header className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-[0.32em] text-amber-300">GSAT</p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Gold & Silver War Room</h1>
+              <p className="mt-2 text-sm text-zinc-500">Free live-market test build • refreshes every 60 seconds</p>
+            </div>
+            <button onClick={loadQuotes} className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-sm font-medium text-amber-200 hover:bg-amber-300/15">{loading ? "Refreshing…" : "Refresh"}</button>
           </div>
-          <div className="flex items-center gap-3"><div className="rounded-xl border border-zinc-800 bg-black/30 px-4 py-3 text-xs"><p className="text-zinc-500">LAST REFRESH</p><p className="mt-1 font-mono">{updatedAt ? new Date(updatedAt).toLocaleTimeString("en-IN") : "--"}</p></div><button onClick={refresh} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-sm text-amber-200 hover:bg-amber-300/15"><RefreshCw size={16} className={loading ? "animate-spin" : ""} />Refresh</button></div>
         </header>
 
-        {error && <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-300">{error}. Automatic retry remains active.</div>}
-
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {featured.map((quote) => { const up = (quote.changePercent ?? 0) >= 0; return <article key={quote.symbol} className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold tracking-[0.18em] text-zinc-400">{quote.label.toUpperCase()}</p><p className="mt-1 text-xs text-zinc-600">{quote.symbol}</p></div><CircleDollarSign size={18} className="text-amber-300" /></div><div className="mt-5 flex items-end justify-between gap-4"><p className="font-mono text-3xl font-semibold">${quote.price.toFixed(2)}</p><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-mono text-xs ${up ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-red-500/30 bg-red-500/10 text-red-400"}`}>{up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{quote.changePercent == null ? "--" : `${quote.changePercent.toFixed(2)}%`}</span></div></article>; })}
-          {featured.length === 0 && !loading && <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5 md:col-span-2 xl:col-span-4"><p className="text-sm text-zinc-500">No live quotes returned. Press Refresh to retry.</p></article>}
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {(["Gold","Silver","DXY","USD/INR","Brent","VIX"] as const).map(label => {
+            const quote = data.quotes.find(q => q.label === label);
+            const positive = (quote?.changePercent ?? 0) >= 0;
+            return (
+              <article key={label} className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+                <div className="flex items-center justify-between"><p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">{label}</p><span className="text-[10px] tracking-[0.16em] text-zinc-700">LIVE</span></div>
+                <p className="mt-4 font-mono text-3xl font-semibold">{quote ? money(quote.price) : "--"}</p>
+                <p className={`mt-2 text-xs font-mono ${positive ? "text-emerald-400" : "text-red-400"}`}>{quote?.changePercent == null ? "--" : `${positive ? "+" : ""}${quote.changePercent.toFixed(2)}%`}</p>
+                <p className="mt-3 text-xs text-zinc-700">Yahoo Finance public feed</p>
+              </article>
+            );
+          })}
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[1.45fr_0.8fr_0.8fr]">
-          <article className="min-h-[420px] rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold tracking-[0.18em] text-zinc-400">MARKET CHART</p><h2 className="mt-1 text-lg font-semibold">Gold / Silver Price Action</h2></div><BarChart3 size={19} className="text-amber-300" /></div><div className="mt-6 flex h-[330px] items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-black/20 text-center"><div><BarChart3 className="mx-auto text-zinc-700" size={42} /><p className="mt-3 text-sm font-medium text-zinc-500">Chart integration comes after deployment verification</p><p className="mt-1 text-xs text-zinc-700">First target: reliable live quotes on Vercel.</p></div></div></article>
-          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold tracking-[0.18em] text-zinc-400">MARKET STATUS</p><h2 className="mt-1 text-lg font-semibold">Live Feed</h2></div><Globe2 size={18} className="text-amber-300" /></div><div className="mt-7 flex items-center justify-center"><div className="flex h-40 w-40 items-center justify-center rounded-full border-[12px] border-amber-300/50 bg-amber-300/5"><div className="text-center"><p className="font-mono text-3xl font-semibold">{quotes.length}</p><p className="text-[10px] tracking-[0.2em] text-zinc-500">QUOTES</p></div></div></div><div className="mt-7 rounded-xl border border-zinc-800 bg-black/20 p-4 text-xs text-zinc-500">Quotes are requested from the GSAT server route and refreshed automatically.</div></article>
-          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold tracking-[0.18em] text-zinc-400">SIGNAL</p><h2 className="mt-1 text-lg font-semibold">WAIT</h2></div><ShieldAlert size={18} className="text-amber-300" /></div><div className="mt-6 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4"><p className="text-xs text-zinc-500">MODE</p><p className="mt-1 font-mono text-2xl font-semibold text-amber-300">TEST</p></div><p className="mt-4 text-sm leading-6 text-zinc-500">No technical signal is generated until the live feed is confirmed stable.</p></article>
+        <section className="grid gap-5 lg:grid-cols-[1.4fr_0.8fr]">
+          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+            <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">CHART</p>
+            <div className="mt-4 flex min-h-[360px] items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-black/20 text-center">
+              <div><p className="text-lg font-medium text-zinc-300">Live chart slot</p><p className="mt-2 text-sm text-zinc-600">Chart integration comes after the production smoke test.</p></div>
+            </div>
+          </article>
+          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+            <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">SYSTEM STATUS</p>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-zinc-500">Data</span><span className="text-emerald-400">{error ? "Error" : "Connected"}</span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">Auto refresh</span><span>60 sec</span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">Last update</span><span>{data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString("en-IN") : "--"}</span></div>
+              <div className="flex justify-between"><span className="text-zinc-500">Engine</span><span className="text-amber-300">v0.1</span></div>
+            </div>
+            {error && <p className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">{error}</p>}
+          </article>
         </section>
-
-        <section className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold tracking-[0.18em] text-zinc-400">MACRO WATCHLIST</p><h2 className="mt-1 text-lg font-semibold">Free Market Drivers</h2></div><span className="text-[10px] tracking-[0.18em] text-zinc-600">LIVE</span></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{watchlist.map((quote) => { const up = (quote.changePercent ?? 0) >= 0; return <div key={quote.symbol} className="rounded-xl border border-zinc-800 bg-black/20 p-4"><p className="text-xs font-semibold tracking-[0.14em] text-zinc-500">{quote.label.toUpperCase()}</p><div className="mt-2 flex items-baseline justify-between"><span className="font-mono text-lg">{quote.price.toFixed(2)}</span><span className={`font-mono text-xs ${up ? "text-red-400" : "text-emerald-400"}`}>{quote.changePercent == null ? "--" : `${quote.changePercent.toFixed(2)}%`}</span></div></div>; })}</div>{watchlist.length === 0 && !loading && <p className="mt-4 text-sm text-zinc-500">Macro quotes are temporarily unavailable.</p>}</section>
-
-        <footer className="border-t border-zinc-900 pt-3 text-[10px] tracking-[0.14em] text-zinc-600">GSAT • WAR ROOM V0.1 • LIVE FREE DATA TEST</footer>
       </div>
     </main>
   );
