@@ -2,11 +2,7 @@
   "name": "gsat",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
-  },
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
   "dependencies": {
     "@tailwindcss/postcss": "latest",
     "lucide-react": "latest",
