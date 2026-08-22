@@ -1,7 +1,8 @@
+"use client";
+
 import { useEffect, useState } from "react";
 
 type Quote = { symbol: string; label: string; price: number; changePercent: number | null };
-
 type QuoteResponse = { quotes: Quote[]; updatedAt: string };
 
 const money = (value: number, digits = 2) => Number.isFinite(value) ? value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "--";
