@@ -19,9 +19,10 @@ type Quote = {
 };
 
 async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=5m&range=1d`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`;
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`${label} unavailable`);
+
   const payload = await response.json();
   const meta = payload?.chart?.result?.[0]?.meta;
   const price = Number(meta?.regularMarketPrice ?? meta?.chartPreviousClose);
@@ -63,7 +64,7 @@ async function fetchTwelveData(symbol: "XAU/USD" | "XAG/USD", label: string): Pr
     price,
     currency: "USD",
     changePercent: null,
-    marketState: "OPEN",
+    marketState: "SPOT",
     providerUpdatedAt: new Date().toISOString(),
     source: "Twelve Data",
   };
@@ -77,23 +78,22 @@ export async function GET() {
   ]);
 
   const successful: Quote[] = [];
-  const errors: Record<string, string> = {};
+  const errors: string[] = [];
 
   for (const item of [gold, silver, ...macroResults]) {
     if ("price" in item) successful.push(item as Quote);
-    else if ("error" in item) errors[item.error] = item.error;
+    else if ("error" in item) errors.push(item.error);
   }
 
-  const spotQuotes = successful.filter((q) => q.source === "Twelve Data");
-  const spotFresh = spotQuotes.length === 2;
+  const metals = successful.filter((q) => q.source === "Twelve Data");
 
   return NextResponse.json(
     {
       quotes: successful,
       updatedAt: new Date().toISOString(),
       market: {
-        spot: spotFresh ? "OPEN" : "UNKNOWN",
-        spotUpdatedAt: spotQuotes[0]?.providerUpdatedAt ?? null,
+        spot: metals.length === 2 ? "OPEN" : "UNKNOWN",
+        spotUpdatedAt: metals[0]?.providerUpdatedAt ?? null,
       },
       sources: {
         metals: "Twelve Data",
