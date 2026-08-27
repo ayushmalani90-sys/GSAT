@@ -22,7 +22,6 @@ async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=5m&range=1d`;
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`${label} unavailable`);
-
   const payload = await response.json();
   const meta = payload?.chart?.result?.[0]?.meta;
   const price = Number(meta?.regularMarketPrice ?? meta?.chartPreviousClose);
@@ -41,82 +40,67 @@ async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
   };
 }
 
-async function fetchSpotMetals(): Promise<{ quotes: Quote[]; source: string; updatedAt: string | null }> {
-  const response = await fetch("https://xaus.com/api/v1/spot?compact=1", {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("Spot metals unavailable");
+async function fetchTwelveData(symbol: "XAU/USD" | "XAG/USD", label: string): Promise<Quote> {
+  const apiKey = process.env.TWELVE_DATA_API_KEY;
+  if (!apiKey) throw new Error("TWELVE_DATA_API_KEY is not configured");
 
+  const url = new URL("https://api.twelvedata.com/price");
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("apikey", apiKey);
+
+  const response = await fetch(url, { cache: "no-store" });
   const data = await response.json();
-  const gold = Number(data?.spot_usd_oz);
-  const silver = Number(data?.silver_usd_oz);
-  if (!Number.isFinite(gold) || !Number.isFinite(silver)) throw new Error("Spot metals invalid");
+  if (!response.ok || data?.status === "error" || data?.code) {
+    throw new Error(data?.message ?? `${label} unavailable`);
+  }
 
-  const updatedAt = data?.updated_at ?? data?.data_state?.as_of ?? null;
+  const price = Number(data?.price);
+  if (!Number.isFinite(price)) throw new Error(`${label} invalid price`);
+
   return {
-    source: "XAUS Spot Metals",
-    updatedAt,
-    quotes: [
-      {
-        symbol: "XAU/USD",
-        label: "Gold",
-        price: gold,
-        currency: "USD",
-        changePercent: null,
-        marketState: "SPOT",
-        providerUpdatedAt: updatedAt,
-        source: "XAUS Spot Metals",
-      },
-      {
-        symbol: "XAG/USD",
-        label: "Silver",
-        price: silver,
-        currency: "USD",
-        changePercent: null,
-        marketState: "SPOT",
-        providerUpdatedAt: updatedAt,
-        source: "XAUS Spot Metals",
-      },
-    ],
+    symbol,
+    label,
+    price,
+    currency: "USD",
+    changePercent: null,
+    marketState: "OPEN",
+    providerUpdatedAt: new Date().toISOString(),
+    source: "Twelve Data",
   };
 }
 
-function spotMarketStatus(updatedAt: string | null) {
-  if (!updatedAt) return "UNKNOWN";
-  const ageMs = Date.now() - new Date(updatedAt).getTime();
-  if (!Number.isFinite(ageMs)) return "UNKNOWN";
-  return ageMs <= 10 * 60 * 1000 ? "OPEN" : "CLOSED";
-}
-
 export async function GET() {
-  const [spotResult, yahooResults] = await Promise.all([
-    fetchSpotMetals().catch((error) => ({
-      error: error instanceof Error ? error.message : "Spot metals unavailable",
-      quotes: [] as Quote[],
-      source: "XAUS Spot Metals",
-      updatedAt: null,
-    })),
-    Promise.allSettled(YAHOO_SYMBOLS.map(([symbol, label]) => fetchYahoo(symbol, label))),
+  const [gold, silver, ...macroResults] = await Promise.all([
+    fetchTwelveData("XAU/USD", "Gold").catch((error) => ({ error: error instanceof Error ? error.message : "Gold unavailable" })),
+    fetchTwelveData("XAG/USD", "Silver").catch((error) => ({ error: error instanceof Error ? error.message : "Silver unavailable" })),
+    ...YAHOO_SYMBOLS.map(([symbol, label]) => fetchYahoo(symbol, label).catch((error) => ({ error: error instanceof Error ? error.message : `${label} unavailable` }))),
   ]);
 
-  const yahooQuotes = yahooResults
-    .filter((result): result is PromiseFulfilledResult<Quote> => result.status === "fulfilled")
-    .map((result) => result.value);
+  const successful: Quote[] = [];
+  const errors: Record<string, string> = {};
 
-  const quotes = [...spotResult.quotes, ...yahooQuotes];
-  const spotUpdatedAt = spotResult.updatedAt;
+  for (const item of [gold, silver, ...macroResults]) {
+    if ("price" in item) successful.push(item as Quote);
+    else if ("error" in item) errors[item.error] = item.error;
+  }
+
+  const spotQuotes = successful.filter((q) => q.source === "Twelve Data");
+  const spotFresh = spotQuotes.length === 2;
 
   return NextResponse.json(
     {
-      quotes,
+      quotes: successful,
       updatedAt: new Date().toISOString(),
       market: {
-        spot: spotMarketStatus(spotUpdatedAt),
-        spotUpdatedAt,
+        spot: spotFresh ? "OPEN" : "UNKNOWN",
+        spotUpdatedAt: spotQuotes[0]?.providerUpdatedAt ?? null,
       },
-      errors: "error" in spotResult ? { spot: spotResult.error } : {},
+      sources: {
+        metals: "Twelve Data",
+        macro: "Yahoo Finance",
+      },
+      errors,
     },
-    { headers: { "Cache-Control": "s-maxage=30, stale-while-revalidate=60" } },
+    { headers: { "Cache-Control": "s-maxage=55, stale-while-revalidate=5" } },
   );
 }
