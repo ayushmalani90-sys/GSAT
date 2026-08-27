@@ -91,7 +91,7 @@ export default function Home() {
           {labels.map((label) => {
             const quote = data.quotes.find((q) => q.label === label);
             const positive = (quote?.changePercent ?? 0) >= 0;
-            const provider = quote?.provider ?? (label === "Gold" || label === "Silver" ? "Spot provider" : "Yahoo Finance");
+            const provider = quote?.provider ?? (label === "Gold" || label === "Silver" ? "Twelve Data" : "Yahoo Finance");
             return (
               <article key={label} className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
                 <div className="flex items-center justify-between">
@@ -142,7 +142,7 @@ export default function Home() {
 
         <footer className="flex flex-col gap-2 border-t border-zinc-900 pt-3 text-[10px] tracking-[0.14em] text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
           <span>GSAT • WAR ROOM V1</span>
-          <span>SPOT: {data.spotSource ?? "PENDING"} • MACRO: {data.macroSource ?? "PENDING"}</span>
+          <span>SPOT: {data.spotSource ?? "Twelve Data"} • MACRO: {data.macroSource ?? "Yahoo Finance"}</span>
         </footer>
       </div>
     </main>
