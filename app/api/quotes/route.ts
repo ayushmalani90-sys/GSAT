@@ -22,7 +22,14 @@ type XausPayload = {
   spot_usd_oz?: number | string;
   silver_usd_oz?: number | string;
   updated_at?: string;
-  timestamp?: string;
+  price_as_of?: string;
+  stale?: boolean;
+  data_state?: {
+    status?: "fresh" | "stale" | "unavailable";
+    as_of?: string;
+    source?: string;
+    age_seconds?: number;
+  };
 };
 
 async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
@@ -46,15 +53,24 @@ async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
   };
 }
 
-async function fetchXaus(): Promise<{ gold: Quote; silver: Quote }> {
-  const response = await fetch("https://xaus.com/api/spot", { cache: "no-store" });
+async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; updatedAt: string; state: XausPayload["data_state"] }> {
+  // Xaus documents /api/v1/spot as the canonical, keyless live XAU/USD endpoint.
+  // A cache-busting `fresh` parameter is intentionally used so production proxies do not serve an old copy.
+  const url = `https://xaus.com/api/v1/spot?compact=1&fresh=${Date.now()}`;
+  const response = await fetch(url, { cache: "no-store" });
+  const data = (await response.json().catch(() => ({}))) as XausPayload;
   if (!response.ok) throw new Error(`XAUS spot feed unavailable (${response.status})`);
-  const data = (await response.json()) as XausPayload;
+
   const gold = Number(data.spot_usd_oz);
   const silver = Number(data.silver_usd_oz);
   if (!Number.isFinite(gold) || !Number.isFinite(silver)) throw new Error("XAUS returned invalid Gold/Silver spot prices");
-  const updatedAt = data.updated_at ?? data.timestamp ?? new Date().toISOString();
-  const timestamp = Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toISOString() : new Date().toISOString();
+
+  const asOf = data.price_as_of ?? data.data_state?.as_of ?? data.updated_at ?? new Date().toISOString();
+  const timestamp = Number.isFinite(Date.parse(asOf)) ? new Date(asOf).toISOString() : new Date().toISOString();
+  const state = data.data_state ?? { status: data.stale ? "stale" : "fresh", as_of: timestamp, source: "upstream" };
+
+  if (state.status === "unavailable") throw new Error("XAUS reports Gold/Silver spot data unavailable");
+
   return {
     gold: {
       symbol: "XAU/USD",
@@ -64,7 +80,7 @@ async function fetchXaus(): Promise<{ gold: Quote; silver: Quote }> {
       changePercent: null,
       marketState: "OPEN",
       providerUpdatedAt: timestamp,
-      provider: "XAUS",
+      provider: state.status === "stale" ? "XAUS (stale)" : "XAUS",
     },
     silver: {
       symbol: "XAG/USD",
@@ -74,8 +90,10 @@ async function fetchXaus(): Promise<{ gold: Quote; silver: Quote }> {
       changePercent: null,
       marketState: "OPEN",
       providerUpdatedAt: timestamp,
-      provider: "XAUS",
+      provider: state.status === "stale" ? "XAUS (stale)" : "XAUS",
     },
+    updatedAt: data.updated_at ?? timestamp,
+    state,
   };
 }
 
@@ -109,8 +127,9 @@ export async function GET() {
       spotSource: "XAUS",
       macroSource: "Yahoo Finance",
       spotError: metalsResult.error ?? null,
+      spotState: metalsResult.metals?.state ?? null,
       errors,
     },
-    { headers: { "Cache-Control": "s-maxage=55, stale-while-revalidate=5" } },
+    { headers: { "Cache-Control": "s-maxage=25, stale-while-revalidate=5" } },
   );
 }
