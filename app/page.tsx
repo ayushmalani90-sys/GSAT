@@ -23,11 +23,19 @@ type QuoteResponse = {
 };
 
 const labels = ["Gold", "Silver", "DXY", "USD/INR", "Brent", "VIX"] as const;
+const indicatorGuides = [
+  { name: "RSI (14)", what: "Momentum, overbought/oversold", use: "Above 50 generally favors bullish momentum; below 50 favors bearish momentum. Extreme readings need trend context." },
+  { name: "MACD", what: "Trend momentum and direction", use: "Use signal-line crosses, the zero line, and histogram expansion/contraction to judge strengthening or weakening momentum." },
+  { name: "Bollinger Bands (20,2)", what: "Volatility and price location", use: "Band expansion shows rising volatility. A walk along a band can confirm trend, so do not treat every touch as a reversal." },
+  { name: "VWAP", what: "Intraday fair value", use: "Price above VWAP generally shows stronger intraday positioning; below VWAP shows weaker positioning." },
+  { name: "ADX (14)", what: "Trend strength", use: "Higher ADX indicates a stronger trend. ADX does not tell us whether the trend is up or down." },
+  { name: "ATR (14)", what: "Volatility and range", use: "Higher ATR means larger expected movement. GSAT can use it to size breakout buffers, stops, and risk zones." },
+  { name: "Stochastic RSI", what: "Short-cycle momentum timing", use: "Useful for timing momentum turns inside a larger trend, but more prone to false signals than RSI alone." },
+] as const;
 
-const money = (value: number) =>
-  Number.isFinite(value)
-    ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : "--";
+const money = (value: number) => Number.isFinite(value)
+  ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  : "--";
 
 function statusFromQuotes(quotes: Quote[]) {
   const metals = quotes.filter((q) => q.label === "Gold" || q.label === "Silver");
@@ -40,10 +48,8 @@ function statusFromQuotes(quotes: Quote[]) {
 }
 
 function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: string }) {
-  const [ready, setReady] = useState(false);
-  const containerId = `tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
-
   useEffect(() => {
+    const containerId = `tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = "";
@@ -52,16 +58,13 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
     widget.className = "tradingview-widget-container";
     widget.style.height = "100%";
     widget.style.width = "100%";
-
     const chart = document.createElement("div");
     chart.className = "tradingview-widget-container__widget";
     chart.style.height = "calc(100% - 32px)";
     chart.style.width = "100%";
-
     const copyright = document.createElement("div");
     copyright.className = "tradingview-widget-copyright";
     copyright.innerHTML = '<a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank">Track markets on TradingView</a>';
-
     widget.appendChild(chart);
     widget.appendChild(copyright);
     container.appendChild(widget);
@@ -88,7 +91,6 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
       calendar: false,
       support_host: "https://www.tradingview.com",
       studies: [
-        "EMA@tv-basicstudies",
         "RSI@tv-basicstudies",
         "MACD@tv-basicstudies",
         "BB@tv-basicstudies",
@@ -100,13 +102,11 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
     });
     widget.appendChild(script);
 
-    const verify = window.setTimeout(() => setReady(true), 1200);
     return () => {
-      window.clearTimeout(verify);
       const current = document.getElementById(containerId);
       if (current) current.innerHTML = "";
     };
-  }, [containerId, symbol]);
+  }, [symbol]);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0d]">
@@ -115,11 +115,9 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
           <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">{title}</p>
           <p className="mt-1 text-xs text-zinc-600">TradingView Advanced Chart • OANDA spot feed</p>
         </div>
-        <span className={`rounded-full border px-2 py-1 text-[10px] ${ready ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-zinc-700 text-zinc-600"}`}>
-          {ready ? "ADVANCED CHART" : "LOADING"}
-        </span>
+        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 text-[10px] text-emerald-400">ADVANCED CHART</span>
       </div>
-      <div id={containerId} className="h-[700px] w-full" />
+      <div id={`tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`} className="h-[680px] w-full" />
     </article>
   );
 }
@@ -160,7 +158,7 @@ export default function Home() {
             <div>
               <p className="text-xs font-bold tracking-[0.32em] text-amber-300">GSAT</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Gold & Silver Analysis Terminal</h1>
-              <p className="mt-2 text-sm text-zinc-500">Spot metals • advanced charts • technical stack • macro watchlist</p>
+              <p className="mt-2 text-sm text-zinc-500">Spot metals • advanced charts • indicator interpretation • macro watchlist</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full border border-zinc-800 bg-black/30 px-3 py-2 text-xs text-zinc-400">{spotStatus.label}</span>
@@ -192,13 +190,42 @@ export default function Home() {
         </section>
 
         <section className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
-          <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">ANALYSIS ORDER</p>
-          <h2 className="mt-1 text-xl font-semibold">Pattern → Indicators → Support / Resistance → Macro → Decision</h2>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {["Pattern", "Indicators", "Support / Resistance", "Macro", "Decision"].map((item, index) => (
-              <div key={item} className="rounded-xl border border-zinc-800 bg-black/20 p-4"><span className="text-[10px] font-semibold tracking-[0.16em] text-amber-300">0{index + 1}</span><p className="mt-2 text-sm font-medium">{item}</p><p className="mt-1 text-xs text-zinc-600">{index === 0 ? "Structure first" : index === 1 ? "EMA • RSI • MACD • BB" : index === 2 ? "Zones + pivots" : index === 3 ? "DXY • VIX • rates" : "BUY • WAIT • SELL"}</p></div>
+          <div>
+            <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">EMA ANALYSIS</p>
+            <h2 className="mt-1 text-xl font-semibold">EMA 20 • EMA 50 • EMA 200 — separate GSAT analysis</h2>
+            <p className="mt-2 text-sm text-zinc-600">We are intentionally not relying on TradingView's default EMA overlay. GSAT will treat the three EMAs as separate trend measurements and compare price position, slope, and alignment.</p>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {[['EMA 20','Short-term trend','Captures the fast trend and pullback structure.'],['EMA 50','Medium-term trend','Tracks the intermediate trend and broader pullback zones.'],['EMA 200','Long-term trend','Defines the major trend regime and long-term bias.']].map(([name, focus, desc]) => (
+              <article key={name} className="rounded-xl border border-zinc-800 bg-black/20 p-4">
+                <h3 className="text-sm font-semibold text-zinc-200">{name}</h3>
+                <p className="mt-2 text-xs font-medium text-amber-300">{focus}</p>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">{desc}</p>
+              </article>
             ))}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">INDICATOR ANALYSIS</p>
+            <h2 className="mt-1 text-xl font-semibold">What each indicator is analyzing</h2>
+            <p className="mt-2 max-w-4xl text-sm text-zinc-600">These indicators are confirmation layers. GSAT will use them together with market structure, support/resistance and macro conditions rather than treating any single reading as a trade signal.</p>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {indicatorGuides.map((item) => (
+              <article key={item.name} className="rounded-xl border border-zinc-800 bg-black/20 p-4">
+                <h3 className="text-sm font-semibold text-zinc-200">{item.name}</h3>
+                <p className="mt-2 text-xs font-medium text-amber-300">Analyzes: {item.what}</p>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">{item.use}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+          <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">ANALYSIS ORDER</p>
+          <h2 className="mt-1 text-xl font-semibold">Pattern → Indicators → Support / Resistance → Macro → Decision</h2>
         </section>
 
         <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
@@ -213,7 +240,7 @@ export default function Home() {
           {(data.spotError || error) && <p className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">{data.spotError || error}</p>}
         </article>
 
-        <footer className="flex flex-col gap-2 border-t border-zinc-900 pt-3 text-[10px] tracking-[0.14em] text-zinc-600 sm:flex-row sm:items-center sm:justify-between"><span>GSAT • ADVANCED CHART BUILD</span><span>SPOT: XAUS • CHARTS: TRADINGVIEW/OANDA • MACRO: YAHOO FINANCE</span></footer>
+        <footer className="flex flex-col gap-2 border-t border-zinc-900 pt-3 text-[10px] tracking-[0.14em] text-zinc-600 sm:flex-row sm:items-center sm:justify-between"><span>GSAT • TECHNICAL WAR ROOM</span><span>SPOT: XAUS • CHARTS: TRADINGVIEW/OANDA • MACRO: YAHOO FINANCE</span></footer>
       </div>
     </main>
   );
