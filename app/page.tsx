@@ -24,9 +24,10 @@ type QuoteResponse = {
 
 const labels = ["Gold", "Silver", "DXY", "USD/INR", "Brent", "VIX"] as const;
 
-const money = (value: number) => Number.isFinite(value)
-  ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  : "--";
+const money = (value: number) =>
+  Number.isFinite(value)
+    ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "--";
 
 function statusFromQuotes(quotes: Quote[]) {
   const metals = quotes.filter((q) => q.label === "Gold" || q.label === "Silver");
@@ -39,18 +40,31 @@ function statusFromQuotes(quotes: Quote[]) {
 }
 
 function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: string }) {
-  const [loaded, setLoaded] = useState(false);
+  const [ready, setReady] = useState(false);
   const containerId = `tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
 
   useEffect(() => {
     const container = document.getElementById(containerId);
     if (!container) return;
-
     container.innerHTML = "";
+
     const widget = document.createElement("div");
     widget.className = "tradingview-widget-container";
-    widget.style.width = "100%";
     widget.style.height = "100%";
+    widget.style.width = "100%";
+
+    const chart = document.createElement("div");
+    chart.className = "tradingview-widget-container__widget";
+    chart.style.height = "calc(100% - 32px)";
+    chart.style.width = "100%";
+
+    const copyright = document.createElement("div");
+    copyright.className = "tradingview-widget-copyright";
+    copyright.innerHTML = '<a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank">Track markets on TradingView</a>';
+
+    widget.appendChild(chart);
+    widget.appendChild(copyright);
+    container.appendChild(widget);
 
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
@@ -64,36 +78,33 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
       theme: "dark",
       style: "1",
       locale: "en",
-      enable_publishing: false,
       allow_symbol_change: false,
-      hide_side_toolbar: false,
       hide_top_toolbar: false,
       hide_legend: false,
-      save_image: false,
+      hide_side_toolbar: false,
+      hide_volume: false,
       withdateranges: true,
-      details: true,
+      save_image: false,
       calendar: false,
       support_host: "https://www.tradingview.com",
       studies: [
-        { id: "STD;EMA", inputs: { length: 20 }, forceOverlay: true },
-        { id: "STD;EMA", inputs: { length: 50 }, forceOverlay: true },
-        { id: "STD;EMA", inputs: { length: 200 }, forceOverlay: true },
-        { id: "STD;RSI" },
-        { id: "STD;MACD" },
-        { id: "STD;Bollinger_Bands" },
-        { id: "STD;VWAP" },
-        { id: "STD;ADX" },
-        { id: "STD;ATR" },
-        { id: "STD;Stochastic_RSI" },
+        "EMA@tv-basicstudies",
+        "RSI@tv-basicstudies",
+        "MACD@tv-basicstudies",
+        "BB@tv-basicstudies",
+        "VWAP@tv-basicstudies",
+        "ADX@tv-basicstudies",
+        "ATR@tv-basicstudies",
+        "StochasticRSI@tv-basicstudies",
       ],
     });
-
     widget.appendChild(script);
-    container.appendChild(widget);
-    setLoaded(true);
 
+    const verify = window.setTimeout(() => setReady(true), 1200);
     return () => {
-      container.innerHTML = "";
+      window.clearTimeout(verify);
+      const current = document.getElementById(containerId);
+      if (current) current.innerHTML = "";
     };
   }, [containerId, symbol]);
 
@@ -104,11 +115,11 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
           <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">{title}</p>
           <p className="mt-1 text-xs text-zinc-600">TradingView Advanced Chart • OANDA spot feed</p>
         </div>
-        <span className={`rounded-full border px-2 py-1 text-[10px] ${loaded ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-zinc-700 text-zinc-600"}`}>
-          {loaded ? "ADVANCED" : "LOADING"}
+        <span className={`rounded-full border px-2 py-1 text-[10px] ${ready ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-zinc-700 text-zinc-600"}`}>
+          {ready ? "ADVANCED CHART" : "LOADING"}
         </span>
       </div>
-      <div id={containerId} className="h-[760px] w-full" />
+      <div id={containerId} className="h-[700px] w-full" />
     </article>
   );
 }
@@ -192,7 +203,7 @@ export default function Home() {
 
         <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
           <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">SYSTEM STATUS</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
             <div className="flex justify-between"><span className="text-zinc-500">Spot feed</span><span className={data.spotError ? "text-red-400" : "text-emerald-400"}>{data.spotError ? "Error" : "Connected"}</span></div>
             <div className="flex justify-between"><span className="text-zinc-500">Provider</span><span>XAUS</span></div>
             <div className="flex justify-between"><span className="text-zinc-500">Refresh</span><span>60 sec</span></div>
