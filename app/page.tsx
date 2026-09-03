@@ -17,7 +17,6 @@ type QuoteResponse = {
   quotes: Quote[];
   updatedAt: string;
   spotSource?: string;
-  macroSource?: string;
   spotError?: string | null;
   errors?: string[];
 };
@@ -204,14 +203,18 @@ export default function Home() {
         </header>
 
         <section className="grid gap-4 md:grid-cols-2">
-          {[gold, silver].map((quote) => (
-            <article key={quote?.label ?? "missing"} className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
-              <div className="flex items-center justify-between"><p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">{quote?.label ?? "Metal"} SPOT / USD</p><span className="text-[10px] tracking-[0.16em] text-zinc-700">{quote ? "DATA" : "WAITING"}</span></div>
-              <p className="mt-4 font-mono text-4xl font-semibold">{quote ? money(quote.price) : "--"}</p>
-              <p className={`mt-2 text-sm font-mono ${(quote?.changePercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{quote?.changePercent == null ? "Change unavailable" : `${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%`}</p>
-              <div className="mt-3 flex items-center justify-between text-xs"><span className="text-zinc-700">{quote?.provider ?? "XAUS"}</span><span className="text-zinc-600">{quote?.providerUpdatedAt ? new Date(quote.providerUpdatedAt).toLocaleTimeString("en-IN") : "--"}</span></div>
-            </article>
-          ))}
+          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+            <div className="flex items-center justify-between"><p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">Gold SPOT / USD</p><span className="text-[10px] tracking-[0.16em] text-zinc-700">{gold ? "DATA" : "WAITING"}</span></div>
+            <p className="mt-4 font-mono text-4xl font-semibold">{gold ? money(gold.price) : "--"}</p>
+            <p className={`mt-2 text-sm font-mono ${(gold?.changePercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{gold?.changePercent == null ? "Change unavailable" : `${gold.changePercent >= 0 ? "+" : ""}${gold.changePercent.toFixed(2)}%`}</p>
+            <div className="mt-3 flex items-center justify-between text-xs"><span className="text-zinc-700">{gold?.provider ?? "XAUS"}</span><span className="text-zinc-600">{gold?.providerUpdatedAt ? new Date(gold.providerUpdatedAt).toLocaleTimeString("en-IN") : "--"}</span></div>
+          </article>
+          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+            <div className="flex items-center justify-between"><p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">Silver SPOT / USD</p><span className="text-[10px] tracking-[0.16em] text-zinc-700">{silver ? "DATA" : "WAITING"}</span></div>
+            <p className="mt-4 font-mono text-4xl font-semibold">{silver ? money(silver.price) : "--"}</p>
+            <p className={`mt-2 text-sm font-mono ${(silver?.changePercent ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{silver?.changePercent == null ? "Change unavailable" : `${silver.changePercent >= 0 ? "+" : ""}${silver.changePercent.toFixed(2)}%`}</p>
+            <div className="mt-3 flex items-center justify-between text-xs"><span className="text-zinc-700">{silver?.provider ?? "XAUS"}</span><span className="text-zinc-600">{silver?.providerUpdatedAt ? new Date(silver.providerUpdatedAt).toLocaleTimeString("en-IN") : "--"}</span></div>
+          </article>
         </section>
 
         <section className="grid gap-5 xl:grid-cols-2">
