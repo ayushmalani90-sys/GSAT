@@ -23,18 +23,6 @@ type QuoteResponse = {
 };
 
 const labels = ["Gold", "Silver", "DXY", "USD/INR", "Brent", "VIX"] as const;
-const coreIndicators = [
-  ["EMA 20", "Short trend"],
-  ["EMA 50", "Intermediate trend"],
-  ["EMA 200", "Major trend"],
-  ["RSI 14", "Momentum"],
-  ["MACD", "Trend momentum"],
-  ["Bollinger Bands", "Volatility"],
-  ["VWAP", "Session value"],
-  ["ADX 14", "Trend strength"],
-  ["ATR 14", "Risk / range"],
-  ["Stoch RSI", "Fast momentum"],
-] as const;
 
 const money = (value: number) => Number.isFinite(value)
   ? value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -50,18 +38,83 @@ function statusFromQuotes(quotes: Quote[]) {
   return { label: "SPOT DATA STALE", detail: `Last update ${Math.round(ageSeconds / 60)}m ago` };
 }
 
-function TradingViewChart({ symbol, title }: { symbol: string; title: string }) {
-  const src = `https://www.tradingview.com/widgetembed/?frameElementId=tv_${encodeURIComponent(symbol)}&symbol=${encodeURIComponent(symbol)}&interval=60&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=%23070707&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&hideideas=1&hidelegend=0&locale=en&studies=EMA@tv-basicstudies%1BEMA@tv-basicstudies%1BEMA@tv-basicstudies%1BRSI@tv-basicstudies%1BMACD@tv-basicstudies%1BBollingerBands@tv-basicstudies%1BVWAP@tv-basicstudies%1BADX@tv-basicstudies%1BATR@tv-basicstudies%1BStochasticRSI@tv-basicstudies`;
+function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: string }) {
+  const [ready, setReady] = useState(false);
+  const containerId = `tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
+  useEffect(() => {
+    const scriptId = "tradingview-widget-script";
+    const render = () => {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = "";
+      const widget = document.createElement("div");
+      widget.className = "tradingview-widget-container";
+      widget.style.width = "100%";
+      widget.style.height = "100%";
+      const widgetInner = document.createElement("div");
+      widgetInner.className = "tradingview-widget-container__widget";
+      widgetInner.style.width = "100%";
+      widgetInner.style.height = "100%";
+      widget.appendChild(widgetInner);
+      const copyright = document.createElement("div");
+      copyright.className = "tradingview-widget-copyright";
+      copyright.innerHTML = '<a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank">Track markets on TradingView</a>';
+      widget.appendChild(copyright);
+      container.appendChild(widget);
+
+      const script = document.createElement("script");
+      script.type = "text/javascript";
+      script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+      script.async = true;
+      script.innerHTML = JSON.stringify({
+        autosize: true,
+        symbol,
+        interval: "60",
+        timezone: "Asia/Kolkata",
+        theme: "dark",
+        style: "1",
+        locale: "en",
+        hide_top_toolbar: false,
+        hide_legend: false,
+        allow_symbol_change: false,
+        save_image: false,
+        calendar: false,
+        support_host: "https://www.tradingview.com",
+        withdateranges: true,
+        studies: ["EMA@tv-basicstudies", "EMA@tv-basicstudies", "EMA@tv-basicstudies", "RSI@tv-basicstudies", "MACD@tv-basicstudies", "BB@tv-basicstudies"],
+        container_id: widgetInner.id || undefined,
+      });
+      widget.appendChild(script);
+      setReady(true);
+    };
+
+    const existing = document.getElementById(scriptId);
+    if (existing) render();
+    else {
+      const loader = document.createElement("script");
+      loader.id = scriptId;
+      loader.src = "https://s3.tradingview.com/tv.js";
+      loader.async = true;
+      loader.onload = render;
+      document.head.appendChild(loader);
+    }
+    return () => {
+      const container = document.getElementById(containerId);
+      if (container) container.innerHTML = "";
+    };
+  }, [containerId, symbol]);
+
   return (
     <article className="overflow-hidden rounded-2xl border border-zinc-800 bg-[#0d0d0d]">
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <div>
           <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">{title}</p>
-          <p className="mt-1 text-xs text-zinc-600">TradingView widget • OANDA spot feed • core indicators loaded</p>
+          <p className="mt-1 text-xs text-zinc-600">TradingView Advanced Chart • OANDA spot feed</p>
         </div>
-        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 text-[10px] text-emerald-400">LIVE CHART</span>
+        <span className={`rounded-full border px-2 py-1 text-[10px] ${ready ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-zinc-700 text-zinc-600"}`}>{ready ? "ADVANCED CHART" : "LOADING"}</span>
       </div>
-      <iframe title={title} src={src} className="h-[610px] w-full border-0" loading="lazy" />
+      <div id={containerId} className="h-[680px] w-full" />
     </article>
   );
 }
@@ -70,7 +123,6 @@ export default function Home() {
   const [data, setData] = useState<QuoteResponse>({ quotes: [], updatedAt: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [indicatorMode, setIndicatorMode] = useState("Core set");
 
   const loadQuotes = useCallback(async () => {
     try {
@@ -94,7 +146,6 @@ export default function Home() {
 
   const spotStatus = useMemo(() => statusFromQuotes(data.quotes), [data.quotes]);
   const metals = data.quotes.filter((q) => q.label === "Gold" || q.label === "Silver");
-  const visibleIndicators = indicatorMode === "Expanded" ? coreIndicators : coreIndicators.slice(0, 6);
 
   return (
     <main className="min-h-screen bg-[#070707] px-4 py-5 text-zinc-100 md:px-6 lg:px-8">
@@ -104,7 +155,7 @@ export default function Home() {
             <div>
               <p className="text-xs font-bold tracking-[0.32em] text-amber-300">GSAT</p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">Gold & Silver Analysis Terminal</h1>
-              <p className="mt-2 text-sm text-zinc-500">Spot metals • multi-timeframe charts • technical stack • macro watchlist</p>
+              <p className="mt-2 text-sm text-zinc-500">Spot metals • advanced charts • technical stack • macro watchlist</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full border border-zinc-800 bg-black/30 px-3 py-2 text-xs text-zinc-400">{spotStatus.label}</span>
@@ -121,10 +172,7 @@ export default function Home() {
             const provider = quote?.provider ?? (label === "Gold" || label === "Silver" ? "XAUS" : "Yahoo Finance");
             return (
               <article key={label} className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">{label}</p>
-                  <span className="text-[10px] tracking-[0.16em] text-zinc-700">{quote ? "DATA" : "WAITING"}</span>
-                </div>
+                <div className="flex items-center justify-between"><p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">{label}</p><span className="text-[10px] tracking-[0.16em] text-zinc-700">{quote ? "DATA" : "WAITING"}</span></div>
                 <p className="mt-4 font-mono text-3xl font-semibold">{quote ? money(quote.price) : "--"}</p>
                 <p className={`mt-2 text-xs font-mono ${positive ? "text-emerald-400" : "text-red-400"}`}>{quote?.changePercent == null ? "Change unavailable" : `${positive ? "+" : ""}${quote.changePercent.toFixed(2)}%`}</p>
                 <div className="mt-3 flex items-center justify-between text-xs"><span className="text-zinc-700">{provider}</span><span className="text-zinc-600">{quote?.providerUpdatedAt ? new Date(quote.providerUpdatedAt).toLocaleTimeString("en-IN") : "--"}</span></div>
@@ -134,56 +182,33 @@ export default function Home() {
         </section>
 
         <section className="grid gap-5 xl:grid-cols-2">
-          <TradingViewChart symbol="OANDA:XAUUSD" title="GOLD SPOT / USD" />
-          <TradingViewChart symbol="OANDA:XAGUSD" title="SILVER SPOT / USD" />
+          <TradingViewAdvancedChart symbol="OANDA:XAUUSD" title="GOLD SPOT / USD" />
+          <TradingViewAdvancedChart symbol="OANDA:XAGUSD" title="SILVER SPOT / USD" />
         </section>
 
         <section className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">TECHNICAL STACK</p>
-              <h2 className="mt-1 text-xl font-semibold">Most important indicators</h2>
-              <p className="mt-2 max-w-3xl text-sm text-zinc-600">The charts load a professional core set first. Pattern detection and support/resistance come after the indicator confirmation layer.</p>
-            </div>
-            <div className="flex rounded-xl border border-zinc-800 bg-black/20 p-1 text-xs">
-              {["Core set", "Expanded"].map((mode) => <button key={mode} onClick={() => setIndicatorMode(mode)} className={`rounded-lg px-3 py-2 ${indicatorMode === mode ? "bg-zinc-800 text-zinc-100" : "text-zinc-500"}`}>{mode}</button>)}
-            </div>
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {visibleIndicators.map(([name, purpose], index) => (
-              <div key={name} className="rounded-xl border border-zinc-800 bg-black/20 p-4">
-                <span className="text-[10px] font-semibold tracking-[0.16em] text-amber-300">{String(index + 1).padStart(2, "0")}</span>
-                <p className="mt-2 text-sm font-medium">{name}</p>
-                <p className="mt-1 text-xs text-zinc-600">{purpose}</p>
-              </div>
+          <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">ANALYSIS ORDER</p>
+          <h2 className="mt-1 text-xl font-semibold">Pattern → Indicators → Support / Resistance → Macro → Decision</h2>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {["Pattern", "Indicators", "Support / Resistance", "Macro", "Decision"].map((item, index) => (
+              <div key={item} className="rounded-xl border border-zinc-800 bg-black/20 p-4"><span className="text-[10px] font-semibold tracking-[0.16em] text-amber-300">0{index + 1}</span><p className="mt-2 text-sm font-medium">{item}</p><p className="mt-1 text-xs text-zinc-600">{index === 0 ? "Structure first" : index === 1 ? "EMA • RSI • MACD • BB" : index === 2 ? "Zones + pivots" : index === 3 ? "DXY • VIX • rates" : "BUY • WAIT • SELL"}</p></div>
             ))}
           </div>
         </section>
 
-        <section className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
-          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
-            <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">ANALYSIS FLOW</p>
-            <h2 className="mt-1 text-lg font-semibold">Pattern → Indicators → Levels → Macro → Decision</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              {["Chart Pattern", "Indicators", "Support / Resistance", "Macro", "Decision"].map((item, index) => (
-                <div key={item} className="rounded-xl border border-zinc-800 bg-black/20 p-4"><span className="text-[10px] font-semibold tracking-[0.18em] text-amber-300">0{index + 1}</span><p className="mt-2 text-sm font-medium">{item}</p><p className="mt-1 text-xs text-zinc-600">{index === 0 ? "Structure first" : index === 1 ? "Technical confirmation" : index === 2 ? "Zones + pivots" : index === 3 ? "DXY • VIX • rates" : "BUY • WAIT • SELL"}</p></div>
-              ))}
-            </div>
-          </article>
-          <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
-            <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">SYSTEM STATUS</p>
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-zinc-500">Spot feed</span><span className={data.spotError ? "text-red-400" : "text-emerald-400"}>{data.spotError ? "Error" : "Connected"}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">Spot provider</span><span>XAUS</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">Refresh</span><span>60 sec</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">Gold + Silver</span><span>{metals.length === 2 ? "Ready" : `${metals.length}/2`}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-500">Macro</span><span>Yahoo Finance</span></div>
-            </div>
-            {(data.spotError || error) && <p className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">{data.spotError || error}</p>}
-          </article>
-        </section>
+        <article className="rounded-2xl border border-zinc-800 bg-[#0d0d0d] p-5">
+          <p className="text-xs font-semibold tracking-[0.2em] text-zinc-500">SYSTEM STATUS</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
+            <div className="flex justify-between"><span className="text-zinc-500">Spot feed</span><span className={data.spotError ? "text-red-400" : "text-emerald-400"}>{data.spotError ? "Error" : "Connected"}</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">Provider</span><span>XAUS</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">Refresh</span><span>60 sec</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">Metals</span><span>{metals.length === 2 ? "Ready" : `${metals.length}/2`}</span></div>
+            <div className="flex justify-between"><span className="text-zinc-500">Macro</span><span>Yahoo Finance</span></div>
+          </div>
+          {(data.spotError || error) && <p className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">{data.spotError || error}</p>}
+        </article>
 
-        <footer className="flex flex-col gap-2 border-t border-zinc-900 pt-3 text-[10px] tracking-[0.14em] text-zinc-600 sm:flex-row sm:items-center sm:justify-between"><span>GSAT • TECHNICAL WAR ROOM V1</span><span>SPOT: XAUS • CHARTS: TRADINGVIEW/OANDA • MACRO: YAHOO FINANCE</span></footer>
+        <footer className="flex flex-col gap-2 border-t border-zinc-900 pt-3 text-[10px] tracking-[0.14em] text-zinc-600 sm:flex-row sm:items-center sm:justify-between"><span>GSAT • ADVANCED CHART BUILD</span><span>SPOT: XAUS • CHARTS: TRADINGVIEW/OANDA • MACRO: YAHOO FINANCE</span></footer>
       </div>
     </main>
   );
