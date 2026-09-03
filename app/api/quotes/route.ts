@@ -18,19 +18,25 @@ type Quote = {
   provider: string;
 };
 
-type XausPayload = {
-  spot_usd_oz?: number | string;
-  silver_usd_oz?: number | string;
-  updated_at?: string;
-  price_as_of?: string;
-  stale?: boolean;
-  data_state?: {
+type XausMetals = {
+  gold: Quote;
+  silver: Quote;
+  updatedAt: string;
+  state?: {
     status?: "fresh" | "stale" | "unavailable";
     as_of?: string;
     source?: string;
     age_seconds?: number;
   };
 };
+
+type MetalsResult =
+  | { metals: XausMetals }
+  | { error: string };
+
+type YahooResult =
+  | { quote: Quote }
+  | { error: string };
 
 async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`;
@@ -53,23 +59,29 @@ async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
   };
 }
 
-async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; updatedAt: string; state: XausPayload["data_state"] }> {
-  // Xaus documents /api/v1/spot as the canonical, keyless live XAU/USD endpoint.
-  // A cache-busting `fresh` parameter is intentionally used so production proxies do not serve an old copy.
-  const url = `https://xaus.com/api/v1/spot?compact=1&fresh=${Date.now()}`;
-  const response = await fetch(url, { cache: "no-store" });
-  const data = (await response.json().catch(() => ({}))) as XausPayload;
+async function fetchXaus(): Promise<XausMetals> {
+  const response = await fetch("https://xaus.com/api/v1/spot", {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
   if (!response.ok) throw new Error(`XAUS spot feed unavailable (${response.status})`);
+  const data = (await response.json()) as {
+    spot_usd_oz?: number | string;
+    silver_usd_oz?: number | string;
+    updated_at?: string;
+    timestamp?: string;
+    state?: XausMetals["state"];
+  };
 
   const gold = Number(data.spot_usd_oz);
   const silver = Number(data.silver_usd_oz);
-  if (!Number.isFinite(gold) || !Number.isFinite(silver)) throw new Error("XAUS returned invalid Gold/Silver spot prices");
+  if (!Number.isFinite(gold) || !Number.isFinite(silver)) {
+    throw new Error("XAUS returned invalid Gold/Silver spot prices");
+  }
 
-  const asOf = data.price_as_of ?? data.data_state?.as_of ?? data.updated_at ?? new Date().toISOString();
-  const timestamp = Number.isFinite(Date.parse(asOf)) ? new Date(asOf).toISOString() : new Date().toISOString();
-  const state = data.data_state ?? { status: data.stale ? "stale" : "fresh", as_of: timestamp, source: "upstream" };
-
-  if (state.status === "unavailable") throw new Error("XAUS reports Gold/Silver spot data unavailable");
+  const updatedAt = data.updated_at ?? data.timestamp ?? new Date().toISOString();
+  const parsedUpdatedAt = Date.parse(updatedAt);
+  const timestamp = Number.isFinite(parsedUpdatedAt) ? new Date(parsedUpdatedAt).toISOString() : new Date().toISOString();
 
   return {
     gold: {
@@ -80,7 +92,7 @@ async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; updatedAt: str
       changePercent: null,
       marketState: "OPEN",
       providerUpdatedAt: timestamp,
-      provider: state.status === "stale" ? "XAUS (stale)" : "XAUS",
+      provider: "XAUS",
     },
     silver: {
       symbol: "XAG/USD",
@@ -90,35 +102,37 @@ async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; updatedAt: str
       changePercent: null,
       marketState: "OPEN",
       providerUpdatedAt: timestamp,
-      provider: state.status === "stale" ? "XAUS (stale)" : "XAUS",
+      provider: "XAUS",
     },
-    updatedAt: data.updated_at ?? timestamp,
-    state,
+    updatedAt: timestamp,
+    state: data.state,
   };
 }
 
 export async function GET() {
   const [metalsResult, yahooResults] = await Promise.all([
     fetchXaus()
-      .then((metals) => ({ metals }))
-      .catch((error) => ({ error: error instanceof Error ? error.message : "Gold/Silver unavailable" })),
+      .then((metals): MetalsResult => ({ metals }))
+      .catch((error): MetalsResult => ({ error: error instanceof Error ? error.message : "Gold/Silver unavailable" })),
     Promise.all(
       YAHOO_SYMBOLS.map(([symbol, label]) =>
         fetchYahoo(symbol, label)
-          .then((quote) => ({ quote }))
-          .catch((error) => ({ error: error instanceof Error ? error.message : `${label} unavailable` })),
+          .then((quote): YahooResult => ({ quote }))
+          .catch((error): YahooResult => ({ error: error instanceof Error ? error.message : `${label} unavailable` })),
       ),
     ),
   ]);
 
   const quotes = [
-    ...(metalsResult.metals ? [metalsResult.metals.gold, metalsResult.metals.silver] : []),
+    ...("metals" in metalsResult ? [metalsResult.metals.gold, metalsResult.metals.silver] : []),
     ...yahooResults.flatMap((item) => ("quote" in item ? [item.quote] : [])),
   ];
   const errors = [
-    ...(metalsResult.error ? [metalsResult.error] : []),
+    ...("error" in metalsResult ? [metalsResult.error] : []),
     ...yahooResults.flatMap((item) => ("error" in item ? [item.error] : [])),
   ];
+  const metalsState = "metals" in metalsResult ? metalsResult.metals.state ?? null : null;
+  const spotError = "error" in metalsResult ? metalsResult.error : null;
 
   return NextResponse.json(
     {
@@ -126,10 +140,10 @@ export async function GET() {
       updatedAt: new Date().toISOString(),
       spotSource: "XAUS",
       macroSource: "Yahoo Finance",
-      spotError: metalsResult.error ?? null,
-      spotState: metalsResult.metals?.state ?? null,
+      spotState: metalsState,
+      spotError,
       errors,
     },
-    { headers: { "Cache-Control": "s-maxage=25, stale-while-revalidate=5" } },
+    { headers: { "Cache-Control": "s-maxage=55, stale-while-revalidate=5" } },
   );
 }
