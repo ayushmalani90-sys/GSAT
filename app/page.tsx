@@ -39,69 +39,61 @@ function statusFromQuotes(quotes: Quote[]) {
 }
 
 function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: string }) {
-  const [ready, setReady] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const containerId = `tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
 
   useEffect(() => {
-    const scriptId = "tradingview-widget-script";
-    const render = () => {
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      container.innerHTML = "";
-      const widget = document.createElement("div");
-      widget.className = "tradingview-widget-container";
-      widget.style.width = "100%";
-      widget.style.height = "100%";
-      const widgetInner = document.createElement("div");
-      widgetInner.className = "tradingview-widget-container__widget";
-      widgetInner.style.width = "100%";
-      widgetInner.style.height = "100%";
-      widget.appendChild(widgetInner);
-      const copyright = document.createElement("div");
-      copyright.className = "tradingview-widget-copyright";
-      copyright.innerHTML = '<a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank">Track markets on TradingView</a>';
-      widget.appendChild(copyright);
-      container.appendChild(widget);
+    const container = document.getElementById(containerId);
+    if (!container) return;
 
-      const script = document.createElement("script");
-      script.type = "text/javascript";
-      script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-      script.async = true;
-      script.innerHTML = JSON.stringify({
-        autosize: true,
-        symbol,
-        interval: "60",
-        timezone: "Asia/Kolkata",
-        theme: "dark",
-        style: "1",
-        locale: "en",
-        hide_top_toolbar: false,
-        hide_legend: false,
-        allow_symbol_change: false,
-        save_image: false,
-        calendar: false,
-        support_host: "https://www.tradingview.com",
-        withdateranges: true,
-        studies: ["EMA@tv-basicstudies", "EMA@tv-basicstudies", "EMA@tv-basicstudies", "RSI@tv-basicstudies", "MACD@tv-basicstudies", "BB@tv-basicstudies"],
-        container_id: widgetInner.id || undefined,
-      });
-      widget.appendChild(script);
-      setReady(true);
-    };
+    container.innerHTML = "";
+    const widget = document.createElement("div");
+    widget.className = "tradingview-widget-container";
+    widget.style.width = "100%";
+    widget.style.height = "100%";
 
-    const existing = document.getElementById(scriptId);
-    if (existing) render();
-    else {
-      const loader = document.createElement("script");
-      loader.id = scriptId;
-      loader.src = "https://s3.tradingview.com/tv.js";
-      loader.async = true;
-      loader.onload = render;
-      document.head.appendChild(loader);
-    }
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.type = "text/javascript";
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval: "60",
+      timezone: "Asia/Kolkata",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      enable_publishing: false,
+      allow_symbol_change: false,
+      hide_side_toolbar: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      save_image: false,
+      withdateranges: true,
+      details: true,
+      calendar: false,
+      support_host: "https://www.tradingview.com",
+      studies: [
+        { id: "STD;EMA", inputs: { length: 20 }, forceOverlay: true },
+        { id: "STD;EMA", inputs: { length: 50 }, forceOverlay: true },
+        { id: "STD;EMA", inputs: { length: 200 }, forceOverlay: true },
+        { id: "STD;RSI" },
+        { id: "STD;MACD" },
+        { id: "STD;Bollinger_Bands" },
+        { id: "STD;VWAP" },
+        { id: "STD;ADX" },
+        { id: "STD;ATR" },
+        { id: "STD;Stochastic_RSI" },
+      ],
+    });
+
+    widget.appendChild(script);
+    container.appendChild(widget);
+    setLoaded(true);
+
     return () => {
-      const container = document.getElementById(containerId);
-      if (container) container.innerHTML = "";
+      container.innerHTML = "";
     };
   }, [containerId, symbol]);
 
@@ -112,9 +104,11 @@ function TradingViewAdvancedChart({ symbol, title }: { symbol: string; title: st
           <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">{title}</p>
           <p className="mt-1 text-xs text-zinc-600">TradingView Advanced Chart • OANDA spot feed</p>
         </div>
-        <span className={`rounded-full border px-2 py-1 text-[10px] ${ready ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-zinc-700 text-zinc-600"}`}>{ready ? "ADVANCED CHART" : "LOADING"}</span>
+        <span className={`rounded-full border px-2 py-1 text-[10px] ${loaded ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-zinc-700 text-zinc-600"}`}>
+          {loaded ? "ADVANCED" : "LOADING"}
+        </span>
       </div>
-      <div id={containerId} className="h-[680px] w-full" />
+      <div id={containerId} className="h-[760px] w-full" />
     </article>
   );
 }
