@@ -1,0 +1,46 @@
+/* GSAT dashboard presentation layer. Does not change API/data/indicator logic. */
+:root{--gsat-bg:#06101d;--gsat-panel:#0b1728;--gsat-card:#0d192b;--gsat-inner:#091423;--gsat-border:#24344b;--gsat-text:#e8eef7;--gsat-muted:#8fa0b7;--gsat-gold:#f5c451;--gsat-green:#37d39b;--gsat-red:#ff5c73}
+html,body{background:var(--gsat-bg)!important;color:var(--gsat-text)!important}
+body{margin:0!important;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
+.gsat-dashboard{min-height:100vh;background:radial-gradient(circle at 50% -10%,rgba(41,74,111,.22),transparent 38%),linear-gradient(180deg,#071321 0%,#06101d 48%,#050c17 100%);padding:16px}
+.gsat-shell{max-width:1500px;margin:0 auto}
+.gsat-header,.gsat-card,.gsat-chart,.gsat-analysis{border:1px solid var(--gsat-border);background:linear-gradient(180deg,rgba(15,28,46,.98),rgba(9,20,35,.98));box-shadow:0 18px 45px rgba(0,0,0,.24);border-radius:18px}
+.gsat-header{padding:20px}
+.gsat-grid{display:grid;gap:14px}
+.gsat-quotes{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gsat-chartgrid,.gsat-analysisgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.gsat-card{padding:20px;min-height:132px}
+.gsat-card-label{font-size:11px;font-weight:800;letter-spacing:.18em;color:#9aa9bd}
+.gsat-card.gold{border-color:rgba(245,196,81,.28)}
+.gsat-value{margin-top:10px;font:700 38px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff}
+.gsat-meta{margin-top:8px;font-size:12px;color:#718198}
+.gsat-chart{overflow:hidden}
+.gsat-chart-title{padding:14px 16px;border-bottom:1px solid rgba(36,52,75,.7)}
+.gsat-chart-title-main{font-size:11px;font-weight:800;letter-spacing:.18em;color:#bcc7d6}
+.gsat-chart-title-sub{margin-top:4px;font-size:12px;color:#718198}
+.gsat-chart-frame{height:620px}
+.gsat-analysis{padding:20px}
+.gsat-analysis-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.gsat-pill{border:1px solid rgba(245,196,81,.28);background:rgba(245,196,81,.08);color:#f8d477;border-radius:999px;padding:7px 11px;font-size:11px;font-weight:700;white-space:nowrap}
+.gsat-analysis-summary{padding:13px 14px;border:1px solid rgba(36,52,75,.85);border-radius:12px;background:rgba(7,16,28,.72);color:#b8c4d4;font-size:13px;line-height:1.55}
+.gsat-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.gsat-metric{padding:14px;border-radius:12px;border:1px solid rgba(36,52,75,.9);background:#091423}
+.gsat-metric-top{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:700}
+.gsat-metric-value{margin-top:10px;font:700 24px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff}
+.gsat-metric-sub{margin-top:5px;font-size:10px;color:#66778d}
+.gsat-zones{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.gsat-zonebox{padding:14px;border-radius:12px;border:1px solid rgba(36,52,75,.9);background:#091423}
+.gsat-zonehead{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.gsat-zone-title{font-size:11px;font-weight:800;letter-spacing:.15em;color:#9aa9bd}
+.gsat-zone-note{font-size:10px;color:#66778d}
+.gsat-zone-list{display:grid;gap:8px;margin-top:10px}
+.gsat-zone{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 11px;border-radius:9px}
+.gsat-zone.support{border:1px solid rgba(55,211,155,.2);background:rgba(55,211,155,.055)}
+.gsat-zone.resistance{border:1px solid rgba(255,92,115,.2);background:rgba(255,92,115,.05)}
+.gsat-zone-price{font:700 14px ui-monospace,SFMono-Regular,Menlo,monospace}
+.gsat-zone.support .gsat-zone-price{color:#62e0b0}.gsat-zone.resistance .gsat-zone-price{color:#ff8597}
+.gsat-zone-info{font-size:10px;color:#7d8da2;text-align:right}
+.gsat-momentum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.gsat-footer{margin-top:14px;border-top:1px solid rgba(36,52,75,.7);padding-top:12px;font-size:10px;letter-spacing:.12em;color:#526277}
+@media (max-width:980px){.gsat-quotes,.gsat-chartgrid,.gsat-analysisgrid{grid-template-columns:1fr}.gsat-metrics{grid-template-columns:1fr}.gsat-zones,.gsat-momentum{grid-template-columns:1fr}}
+@media (max-width:640px){.gsat-dashboard{padding:10px}.gsat-header,.gsat-card,.gsat-analysis{border-radius:14px;padding:15px}.gsat-value{font-size:31px}.gsat-chart-frame{height:520px}.gsat-analysis-head{flex-direction:column}.gsat-pill{align-self:flex-start}}
