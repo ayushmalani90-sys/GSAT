@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
 
-const YAHOO_SYMBOLS = [
-  ["DX-Y.NYB", "DXY"],
-  ["USDINR=X", "USD/INR"],
-  ["BZ=F", "Brent"],
-  ["^VIX", "VIX"],
-] as const;
-
 type Quote = {
   symbol: string;
   label: string;
@@ -33,31 +26,6 @@ type XausMetals = {
 type MetalsResult =
   | { metals: XausMetals }
   | { error: string };
-
-type YahooResult =
-  | { quote: Quote }
-  | { error: string };
-
-async function fetchYahoo(symbol: string, label: string): Promise<Quote> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`;
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`${label} unavailable`);
-  const payload = await response.json();
-  const meta = payload?.chart?.result?.[0]?.meta;
-  const price = Number(meta?.regularMarketPrice ?? meta?.chartPreviousClose);
-  const previous = Number(meta?.previousClose ?? meta?.chartPreviousClose);
-  if (!Number.isFinite(price)) throw new Error(`${label} invalid price`);
-  return {
-    symbol,
-    label,
-    price,
-    currency: String(meta?.currency ?? "USD"),
-    changePercent: Number.isFinite(previous) && previous !== 0 ? ((price - previous) / previous) * 100 : null,
-    marketState: String(meta?.marketState ?? "UNKNOWN"),
-    providerUpdatedAt: meta?.regularMarketTime ? new Date(meta.regularMarketTime * 1000).toISOString() : null,
-    provider: "Yahoo Finance",
-  };
-}
 
 async function fetchXaus(): Promise<XausMetals> {
   const response = await fetch("https://xaus.com/api/v1/spot", {
@@ -110,40 +78,26 @@ async function fetchXaus(): Promise<XausMetals> {
 }
 
 export async function GET() {
-  const [metalsResult, yahooResults] = await Promise.all([
-    fetchXaus()
-      .then((metals): MetalsResult => ({ metals }))
-      .catch((error): MetalsResult => ({ error: error instanceof Error ? error.message : "Gold/Silver unavailable" })),
-    Promise.all(
-      YAHOO_SYMBOLS.map(([symbol, label]) =>
-        fetchYahoo(symbol, label)
-          .then((quote): YahooResult => ({ quote }))
-          .catch((error): YahooResult => ({ error: error instanceof Error ? error.message : `${label} unavailable` })),
-      ),
-    ),
-  ]);
+  const result = await fetchXaus()
+    .then((metals): MetalsResult => ({ metals }))
+    .catch((error): MetalsResult => ({
+      error: error instanceof Error ? error.message : "Gold/Silver unavailable",
+    }));
 
-  const quotes = [
-    ...("metals" in metalsResult ? [metalsResult.metals.gold, metalsResult.metals.silver] : []),
-    ...yahooResults.flatMap((item) => ("quote" in item ? [item.quote] : [])),
-  ];
-  const errors = [
-    ...("error" in metalsResult ? [metalsResult.error] : []),
-    ...yahooResults.flatMap((item) => ("error" in item ? [item.error] : [])),
-  ];
-  const metalsState = "metals" in metalsResult ? metalsResult.metals.state ?? null : null;
-  const spotError = "error" in metalsResult ? metalsResult.error : null;
+  const quotes = "metals" in result ? [result.metals.gold, result.metals.silver] : [];
+  const errors = "error" in result ? [result.error] : [];
+  const metalsState = "metals" in result ? result.metals.state ?? null : null;
+  const spotError = "error" in result ? result.error : null;
 
   return NextResponse.json(
     {
       quotes,
       updatedAt: new Date().toISOString(),
       spotSource: "XAUS",
-      macroSource: "Yahoo Finance",
       spotState: metalsState,
       spotError,
       errors,
     },
-    { headers: { "Cache-Control": "s-maxage=55, stale-while-revalidate=5" } },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }
