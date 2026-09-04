@@ -12,7 +12,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <div className="gsat-dashboard">{children}</div>
+        <div className="gsat-dashboard" style={{ minHeight: "100vh" }}>{children}</div>
       </body>
     </html>
   );
