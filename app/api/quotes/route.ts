@@ -24,7 +24,7 @@ type XausResponse = {
   };
 };
 
-async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; updatedAt: string; state?: XausResponse["state"] }> {
+async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; state: XausResponse["state"] }> {
   const response = await fetch("https://xaus.com/api/v1/spot", {
     cache: "no-store",
     headers: { Accept: "application/json" },
@@ -38,14 +38,13 @@ async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; updatedAt: str
     throw new Error("XAUS returned invalid Gold/Silver spot prices");
   }
 
-  const sourceTimestamp = data.updated_at ?? data.timestamp ?? data.state?.as_of ?? new Date().toISOString();
-  const parsed = Date.parse(sourceTimestamp);
-  const updatedAt = Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+  const rawTimestamp = data.updated_at ?? data.timestamp ?? data.state?.as_of;
+  const parsed = rawTimestamp ? Date.parse(rawTimestamp) : NaN;
+  const timestamp = Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
 
   return {
-    gold: { symbol: "XAU/USD", label: "Gold", price: gold, currency: "USD", changePercent: null, marketState: "OPEN", providerUpdatedAt: updatedAt, provider: "XAUS" },
-    silver: { symbol: "XAG/USD", label: "Silver", price: silver, currency: "USD", changePercent: null, marketState: "OPEN", providerUpdatedAt: updatedAt, provider: "XAUS" },
-    updatedAt,
+    gold: { symbol: "XAU/USD", label: "Gold", price: gold, currency: "USD", changePercent: null, marketState: "OPEN", providerUpdatedAt: timestamp, provider: "XAUS" },
+    silver: { symbol: "XAG/USD", label: "Silver", price: silver, currency: "USD", changePercent: null, marketState: "OPEN", providerUpdatedAt: timestamp, provider: "XAUS" },
     state: data.state,
   };
 }
@@ -54,14 +53,7 @@ export async function GET() {
   try {
     const result = await fetchXaus();
     return NextResponse.json(
-      {
-        quotes: [result.gold, result.silver],
-        updatedAt: new Date().toISOString(),
-        spotSource: "XAUS",
-        spotState: result.state ?? null,
-        spotError: null,
-        errors: [],
-      },
+      { quotes: [result.gold, result.silver], updatedAt: new Date().toISOString(), spotSource: "XAUS", spotState: result.state ?? null, spotError: null, errors: [] },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   } catch (error) {
