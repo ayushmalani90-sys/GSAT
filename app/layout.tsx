@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./theme.css";
+import "./dashboard.css";
 
 export const metadata: Metadata = {
   title: "GSAT — Gold & Silver Analysis Terminal",
@@ -8,5 +9,11 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return (
+    <html lang="en">
+      <body>
+        <div className="gsat-dashboard">{children}</div>
+      </body>
+    </html>
+  );
 }
