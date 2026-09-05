@@ -36,6 +36,7 @@ const TIMEFRAME_TO_BIQUOTE: Record<string, string> = {
   "1H": "1h",
   "4H": "4h",
   "1D": "1d",
+  "1M": "1d",
 };
 
 const MAX_CANDLES = 1000;
@@ -63,6 +64,31 @@ async function fetchBiquoteCandles(symbol: "XAUUSD" | "XAGUSD", interval: string
     .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
 }
 
+function aggregateMonthly(candles: TechnicalCandle[]): TechnicalCandle[] {
+  const months: TechnicalCandle[] = [];
+  let current: TechnicalCandle | null = null;
+  let key = "";
+
+  for (const candle of candles) {
+    const date = new Date(candle.t);
+    if (!Number.isFinite(date.getTime())) continue;
+    const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    if (!current || monthKey !== key) {
+      if (current) months.push(current);
+      current = { t: `${monthKey}-01T00:00:00.000Z`, o: candle.o, h: candle.h, l: candle.l, c: candle.c };
+      key = monthKey;
+    } else {
+      current.h = Math.max(current.h, candle.h);
+      current.l = Math.min(current.l, candle.l);
+      current.c = candle.c;
+    }
+  }
+
+  if (current) months.push(current);
+  return months;
+}
+
 async function fetchBiquoteTick(symbol: "XAUUSD" | "XAGUSD") {
   const response = await fetch(`https://biquote.io/api/${symbol}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`BiQuote ${symbol} quote unavailable (${response.status})`);
@@ -82,12 +108,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [gold, silver, goldTick, silverTick] = await Promise.all([
+    const [goldDaily, silverDaily, goldTick, silverTick] = await Promise.all([
       fetchBiquoteCandles("XAUUSD", interval),
       fetchBiquoteCandles("XAGUSD", interval),
       fetchBiquoteTick("XAUUSD"),
       fetchBiquoteTick("XAGUSD"),
     ]);
+
+    const gold = timeframe === "1M" ? aggregateMonthly(goldDaily) : goldDaily;
+    const silver = timeframe === "1M" ? aggregateMonthly(silverDaily) : silverDaily;
 
     return NextResponse.json(
       {
@@ -103,7 +132,7 @@ export async function GET(request: Request) {
         silver: { intraday: analyze(silver) },
         methodology: {
           note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal, and support/resistance uses structural candle swing highs/lows with separation filtering.",
-          dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price.",
+          dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price. Monthly candles are aggregated from completed BiQuote daily candles.",
         },
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
