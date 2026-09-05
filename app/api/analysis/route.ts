@@ -11,12 +11,16 @@ async function fetchIntraday(symbol: "xau" | "xag", hours: number): Promise<Tech
   if (!response.ok) throw new Error(`XAUS ${symbol} intraday unavailable (${response.status})`);
   const data = (await response.json()) as { points?: XausPoint[] };
   return Array.isArray(data.points)
-    ? data.points.map((p) => ({ t: String(p.t ?? ""), p: Number(p.p) })).filter((p) => Boolean(p.t) && Number.isFinite(p.p))
+    ? data.points
+        .map((p) => ({ t: String(p.t ?? ""), p: Number(p.p) }))
+        .filter((p) => Boolean(p.t) && Number.isFinite(p.p))
     : [];
 }
 
 export async function GET(request: Request) {
-  const requestedHours = Number(new URL(request.url).searchParams.get("hours") ?? 72);
+  const params = new URL(request.url).searchParams;
+  const requestedHours = Number(params.get("hours") ?? 72);
+  const requestedTimeframe = params.get("timeframe") ?? "1H";
   const hours = Number.isFinite(requestedHours) ? Math.min(168, Math.max(24, requestedHours)) : 72;
 
   try {
@@ -25,10 +29,11 @@ export async function GET(request: Request) {
       {
         source: "XAUS",
         generatedAt: new Date().toISOString(),
+        timeframe: requestedTimeframe,
         gold: { intraday: analyze(gold) },
         silver: { intraday: analyze(silver) },
         methodology: {
-          note: "EMA 20/50/200, RSI 14, MACD 12/26/9 and clustered swing support/resistance are calculated directly from real XAUS intraday observations. No synthetic values are created.",
+          note: "EMA 20/50/200, RSI 14, MACD 12/26/9 and clustered swing support/resistance are calculated from the selected XAUS intraday window. No synthetic values are created.",
         },
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
