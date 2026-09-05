@@ -11,55 +11,62 @@ type Quote = {
   provider: string;
 };
 
-type XausResponse = {
-  spot_usd_oz?: number | string;
-  silver_usd_oz?: number | string;
-  updated_at?: string;
+type BiquoteTick = {
+  symbol?: string;
+  mid?: number;
+  bid?: number;
+  ask?: number;
+  dayDiffPercent?: number;
   timestamp?: string;
-  state?: {
-    status?: string;
-    as_of?: string;
-    source?: string;
-    age_seconds?: number;
-  };
+  stale?: boolean;
+  marketState?: string;
+  quoteAgeSeconds?: number;
 };
 
-async function fetchXaus(): Promise<{ gold: Quote; silver: Quote; state: XausResponse["state"] }> {
-  const response = await fetch("https://xaus.com/api/v1/spot", {
+async function fetchBiquote(symbol: "XAUUSD" | "XAGUSD"): Promise<Quote> {
+  const response = await fetch(`https://biquote.io/api/${symbol}`, {
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
-  if (!response.ok) throw new Error(`XAUS spot feed unavailable (${response.status})`);
+  if (!response.ok) throw new Error(`BiQuote ${symbol} unavailable (${response.status})`);
 
-  const data = (await response.json()) as XausResponse;
-  const gold = Number(data.spot_usd_oz);
-  const silver = Number(data.silver_usd_oz);
-  if (!Number.isFinite(gold) || !Number.isFinite(silver)) {
-    throw new Error("XAUS returned invalid Gold/Silver spot prices");
-  }
+  const data = (await response.json()) as BiquoteTick;
+  const price = Number(data.mid);
+  if (!Number.isFinite(price)) throw new Error(`BiQuote returned invalid ${symbol} spot price`);
 
-  const rawTimestamp = data.updated_at ?? data.timestamp ?? data.state?.as_of;
-  const parsed = rawTimestamp ? Date.parse(rawTimestamp) : NaN;
-  const timestamp = Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+  const parsedTimestamp = data.timestamp ? Date.parse(data.timestamp) : NaN;
+  const providerUpdatedAt = Number.isFinite(parsedTimestamp) ? new Date(parsedTimestamp).toISOString() : null;
 
   return {
-    gold: { symbol: "XAU/USD", label: "Gold", price: gold, currency: "USD", changePercent: null, marketState: "OPEN", providerUpdatedAt: timestamp, provider: "XAUS" },
-    silver: { symbol: "XAG/USD", label: "Silver", price: silver, currency: "USD", changePercent: null, marketState: "OPEN", providerUpdatedAt: timestamp, provider: "XAUS" },
-    state: data.state,
+    symbol: symbol === "XAUUSD" ? "XAU/USD" : "XAG/USD",
+    label: symbol === "XAUUSD" ? "Gold" : "Silver",
+    price,
+    currency: "USD",
+    changePercent: Number.isFinite(Number(data.dayDiffPercent)) ? Number(data.dayDiffPercent) : null,
+    marketState: data.marketState ?? (data.stale ? "STALE" : "OPEN"),
+    providerUpdatedAt,
+    provider: "BiQuote",
   };
 }
 
 export async function GET() {
   try {
-    const result = await fetchXaus();
+    const [gold, silver] = await Promise.all([fetchBiquote("XAUUSD"), fetchBiquote("XAGUSD")]);
     return NextResponse.json(
-      { quotes: [result.gold, result.silver], updatedAt: new Date().toISOString(), spotSource: "XAUS", spotState: result.state ?? null, spotError: null, errors: [] },
+      {
+        quotes: [gold, silver],
+        updatedAt: new Date().toISOString(),
+        spotSource: "BiQuote",
+        spotState: null,
+        spotError: null,
+        errors: [],
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gold/Silver unavailable";
     return NextResponse.json(
-      { quotes: [], updatedAt: new Date().toISOString(), spotSource: "XAUS", spotState: null, spotError: message, errors: [message] },
+      { quotes: [], updatedAt: new Date().toISOString(), spotSource: "BiQuote", spotState: null, spotError: message, errors: [message] },
       { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   }
