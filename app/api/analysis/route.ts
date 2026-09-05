@@ -39,7 +39,10 @@ const TIMEFRAME_TO_BIQUOTE: Record<string, string> = {
   "1M": "1d",
 };
 
-const MAX_CANDLES = 1000;
+// Monthly analysis needs substantially more than 1,000 daily candles to build
+// a useful EMA200/RSI/MACD history. Five years of daily candles gives ~1,300
+// trading days, which also yields ~60 monthly candles after aggregation.
+const MAX_CANDLES = 2000;
 
 async function fetchBiquoteCandles(symbol: "XAUUSD" | "XAGUSD", interval: string): Promise<TechnicalCandle[]> {
   const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
@@ -118,6 +121,10 @@ export async function GET(request: Request) {
     const gold = timeframe === "1M" ? aggregateMonthly(goldDaily) : goldDaily;
     const silver = timeframe === "1M" ? aggregateMonthly(silverDaily) : silverDaily;
 
+    if (timeframe === "1M" && (gold.length < 210 || silver.length < 210)) {
+      throw new Error("BiQuote returned insufficient daily history to calculate stable monthly EMA200/RSI/MACD analysis");
+    }
+
     return NextResponse.json(
       {
         source: "BiQuote",
@@ -131,7 +138,7 @@ export async function GET(request: Request) {
         gold: { intraday: analyze(gold) },
         silver: { intraday: analyze(silver) },
         methodology: {
-          note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal, and support/resistance uses structural candle swing highs/lows with separation filtering.",
+          note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal, and support/resistance uses structural candle swing highs/lows with separation filtering. For 1M, completed daily candles are aggregated into calendar-month OHLC candles before indicator calculations.",
           dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price. Monthly candles are aggregated from completed BiQuote daily candles.",
         },
       },
