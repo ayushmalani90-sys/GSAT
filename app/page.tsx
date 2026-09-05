@@ -40,68 +40,27 @@ type Analysis = {
   overall?: { bias: string; summary: string };
 };
 
-type AnalysisResponse = { source?: string; generatedAt?: string; gold: { intraday: Analysis }; silver: { intraday: Analysis }; methodology?: { note?: string } };
-
-type Tone = "green" | "red" | "gold" | "blue" | "muted";
+type AnalysisResponse = {
+  source?: string;
+  generatedAt?: string;
+  gold: { intraday: Analysis };
+  silver: { intraday: Analysis };
+  methodology?: { note?: string };
+};
 
 const money = (v: number | null) =>
   v != null && Number.isFinite(v)
     ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : "--";
+
 const levelPrice = (l: Level | number) => (typeof l === "number" ? l : l.price);
 const levelStrength = (l: Level | number) => (typeof l === "number" ? null : l.strength);
 const levelTouches = (l: Level | number) => (typeof l === "number" ? null : l.touches);
 
-function statusFromQuotes(q: Quote[]) {
-  const timestamps = q.filter((x) => x.providerUpdatedAt).map((x) => Date.parse(x.providerUpdatedAt as string));
-  const latest = timestamps.length ? Math.max(...timestamps) : NaN;
-  if (!Number.isFinite(latest)) return { label: "DATA STATUS UNKNOWN", detail: "Waiting for spot timestamp" };
-  const age = Math.max(0, Date.now() - latest) / 1000;
-  return age <= 90
-    ? { label: "SPOT DATA FRESH", detail: `Updated ${Math.round(age)}s ago` }
-    : { label: "SPOT DATA STALE", detail: `Last update ${Math.round(age / 60)}m ago` };
-}
-
-function toneClasses(tone: Tone) {
-  const map: Record<Tone, { border: string; bg: string; text: string; glow: string }> = {
-    green: { border: "border-emerald-400/25", bg: "bg-emerald-400/[0.06]", text: "text-emerald-300", glow: "shadow-emerald-950/25" },
-    red: { border: "border-rose-400/25", bg: "bg-rose-400/[0.06]", text: "text-rose-300", glow: "shadow-rose-950/25" },
-    gold: { border: "border-amber-300/25", bg: "bg-amber-300/[0.06]", text: "text-amber-200", glow: "shadow-amber-950/25" },
-    blue: { border: "border-sky-400/25", bg: "bg-sky-400/[0.06]", text: "text-sky-300", glow: "shadow-sky-950/25" },
-    muted: { border: "border-slate-700/80", bg: "bg-slate-900/25", text: "text-slate-300", glow: "shadow-black/20" },
-  };
-  return map[tone];
-}
-
-function Badge({ children, tone = "muted" }: { children: React.ReactNode; tone?: Tone }) {
-  const c = toneClasses(tone);
-  return <span className={`inline-flex items-center rounded-full border ${c.border} ${c.bg} ${c.text} px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em]`}>{children}</span>;
-}
-
-function SectionTitle({ eyebrow, title, detail }: { eyebrow: string; title: string; detail?: string }) {
-  return (
-    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p className="text-[10px] font-black tracking-[0.24em] text-slate-500">{eyebrow}</p>
-        <h2 className="mt-1 text-xl font-black tracking-tight text-slate-100 sm:text-2xl">{title}</h2>
-      </div>
-      {detail ? <p className="text-xs text-slate-500">{detail}</p> : null}
-    </div>
-  );
-}
-
-function MetricCard({ label, value, helper, tone = "muted", badge }: { label: string; value: string; helper?: string; tone?: Tone; badge?: string }) {
-  const c = toneClasses(tone);
-  return (
-    <article className={`rounded-2xl border ${c.border} ${c.bg} ${c.glow} p-5 shadow-xl backdrop-blur-sm`}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black tracking-[0.2em] text-slate-500">{label}</p>
-        {badge ? <Badge tone={tone}>{badge}</Badge> : null}
-      </div>
-      <p className="mt-4 font-mono text-3xl font-black tracking-tight text-white sm:text-4xl">{value}</p>
-      {helper ? <p className="mt-3 text-xs leading-5 text-slate-500">{helper}</p> : null}
-    </article>
-  );
+function dataTone(value: string) {
+  if (/above|bull|buy|positive/i.test(value)) return "positive";
+  if (/below|bear|sell|negative/i.test(value)) return "negative";
+  return "neutral";
 }
 
 function TradingViewChart({ symbol, title }: { symbol: string; title: string }) {
@@ -110,16 +69,19 @@ function TradingViewChart({ symbol, title }: { symbol: string; title: string }) 
     const container = document.getElementById(id);
     if (!container) return;
     container.innerHTML = "";
+
     const widget = document.createElement("div");
     widget.className = "tradingview-widget-container";
     widget.style.height = "100%";
     widget.style.width = "100%";
+
     const chart = document.createElement("div");
     chart.className = "tradingview-widget-container__widget";
     chart.style.height = "100%";
     chart.style.width = "100%";
     widget.appendChild(chart);
     container.appendChild(widget);
+
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.type = "text/javascript";
@@ -144,218 +106,160 @@ function TradingViewChart({ symbol, title }: { symbol: string; title: string }) 
       studies: ["RSI@tv-basicstudies", "MACD@tv-basicstudies"],
     });
     widget.appendChild(script);
+
     return () => {
-      const x = document.getElementById(id);
-      if (x) x.innerHTML = "";
+      const current = document.getElementById(id);
+      if (current) current.innerHTML = "";
     };
   }, [symbol]);
 
   return (
-    <article className="overflow-hidden rounded-3xl border border-slate-700/80 bg-[#091525] shadow-2xl shadow-black/25">
-      <div className="border-b border-slate-800/90 px-5 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-black tracking-[0.2em] text-slate-300">{title}</p>
-            <p className="mt-1 text-xs text-slate-500">TradingView • OANDA spot feed • RSI + MACD</p>
-          </div>
-          <Badge tone="green">LIVE</Badge>
+    <section className="gsat-card gsat-chart-card">
+      <div className="gsat-card-head">
+        <div>
+          <div className="gsat-kicker">{title}</div>
+          <div className="gsat-card-subtitle">OANDA spot feed · RSI + MACD</div>
         </div>
+        <span className="gsat-status-dot"><span /> LIVE</span>
       </div>
-      <div id={`tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`} className="h-[560px] w-full sm:h-[620px]" />
+      <div id={`tv_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`} className="gsat-chart-frame" />
+    </section>
+  );
+}
+
+function SpotCard({ quote, accent }: { quote: Quote | undefined; accent: "gold" | "silver" }) {
+  const change = quote?.changePercent;
+  const tone = change != null ? (change >= 0 ? "positive" : "negative") : "neutral";
+  const updated = quote?.providerUpdatedAt ? new Date(quote.providerUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--";
+
+  return (
+    <article className={`gsat-card gsat-spot-card ${accent}`}>
+      <div className="gsat-spot-top">
+        <div className="gsat-spot-name">
+          <span className={`gsat-metal-mark ${accent}`}>{accent === "gold" ? "Au" : "Ag"}</span>
+          <div>
+            <div className="gsat-kicker">{accent === "gold" ? "GOLD" : "SILVER"}</div>
+            <div className="gsat-card-subtitle">USD / troy oz · spot</div>
+          </div>
+        </div>
+        <span className="gsat-live-pill">LIVE</span>
+      </div>
+      <div className="gsat-spot-price">${money(quote?.price ?? null)}</div>
+      <div className="gsat-spot-bottom">
+        <span className={`gsat-change ${tone}`}>{change == null ? "--" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}</span>
+        <span className="gsat-card-subtitle">Updated {updated}</span>
+      </div>
     </article>
   );
 }
 
-function ScoreRing({ score, bias }: { score: number; bias: string }) {
-  const circumference = 2 * Math.PI * 42;
-  const dash = Math.max(0, Math.min(100, score)) / 100 * circumference;
-  const bullish = /bull|buy/i.test(bias);
+function RatioCard({ gold, silver }: { gold: Quote | undefined; silver: Quote | undefined }) {
+  const ratio = gold && silver && silver.price > 0 ? gold.price / silver.price : null;
   return (
-    <div className="relative h-32 w-32 shrink-0">
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-        <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(51,65,85,.65)" strokeWidth="9" />
-        <circle cx="50" cy="50" r="42" fill="none" stroke={bullish ? "#34d399" : "#fbbf24"} strokeWidth="9" strokeLinecap="round" strokeDasharray={`${dash} ${circumference - dash}`} />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-3xl font-black text-white">{score}</span>
-        <span className="text-[9px] font-black tracking-[0.15em] text-slate-500">/100</span>
+    <article className="gsat-card gsat-spot-card ratio">
+      <div className="gsat-spot-top">
+        <div className="gsat-spot-name">
+          <span className="gsat-metal-mark ratio">R</span>
+          <div>
+            <div className="gsat-kicker">GOLD / SILVER RATIO</div>
+            <div className="gsat-card-subtitle">Relative spot value</div>
+          </div>
+        </div>
+      </div>
+      <div className="gsat-spot-price">{ratio == null ? "--" : ratio.toFixed(2)}×</div>
+      <div className="gsat-card-subtitle">Gold spot ÷ silver spot</div>
+    </article>
+  );
+}
+
+function EmaCard({ label, value, relation, price }: { label: string; value: number | null; relation: string; price: number | null }) {
+  const tone = dataTone(relation);
+  return (
+    <div className={`gsat-ema-card ${tone}`}>
+      <div className="gsat-ema-head">
+        <span>{label}</span>
+        <span className={`gsat-mini-badge ${tone}`}>{relation || "--"}</span>
+      </div>
+      <div className="gsat-ema-value">{money(value)}</div>
+      <div className="gsat-ema-sub">Current price ${money(price)}</div>
+    </div>
+  );
+}
+
+function LevelRow({ level, label, kind }: { level: Level | number; label: string; kind: "support" | "resistance" }) {
+  return (
+    <div className={`gsat-level-row ${kind}`}>
+      <div>
+        <div className="gsat-level-label">{label}</div>
+        <div className="gsat-level-price">{money(levelPrice(level))}</div>
+      </div>
+      <div className="gsat-level-meta">
+        <div>{levelStrength(level) != null ? `Strength ${levelStrength(level)}` : "Pivot"}</div>
+        <div>{levelTouches(level) != null ? `${levelTouches(level)} touches` : "Confirmed level"}</div>
       </div>
     </div>
   );
 }
 
-function TechnicalSummary({ metal, a }: { metal: string; a: Analysis | null }) {
-  if (!a) {
-    return <article className="rounded-3xl border border-slate-700/80 bg-[#0b1728] p-5 shadow-2xl shadow-black/20"><p className="text-sm text-slate-400">Loading {metal} analysis…</p></article>;
+function TechnicalCard({ metal, analysis }: { metal: string; analysis: Analysis | null }) {
+  if (!analysis) {
+    return (
+      <article className="gsat-card gsat-tech-card">
+        <div className="gsat-kicker">{metal.toUpperCase()} ANALYSIS</div>
+        <div className="gsat-loading">Loading technical analysis…</div>
+      </article>
+    );
   }
-  const bias = a.overall?.bias ?? "Mixed";
-  const isBullish = /bull|buy/i.test(bias);
-  const supports = a.supportResistance.supports.slice(0, 3);
-  const resistances = a.supportResistance.resistances.slice(0, 3);
-  const emaItems = [
-    ["EMA 20", a.ema.ema20, a.ema.priceVsEma20, "Short-term"],
-    ["EMA 50", a.ema.ema50, a.ema.priceVsEma50, "Medium-term"],
-    ["EMA 200", a.ema.ema200, a.ema.priceVsEma200, "Long-term"],
-  ] as const;
-  const score = Math.round((isBullish ? 68 : 42) + (a.momentum.rsi14 != null && a.momentum.rsi14 > 50 ? 8 : 0) + (a.momentum.macdHistogram != null && a.momentum.macdHistogram > 0 ? 9 : 0));
+
+  const bias = analysis.overall?.bias || analysis.ema.bias || "Mixed";
+  const supports = analysis.supportResistance.supports.slice(0, 3);
+  const resistances = analysis.supportResistance.resistances.slice(0, 3);
 
   return (
-    <article className="rounded-3xl border border-slate-700/80 bg-[#0b1728] p-5 shadow-2xl shadow-black/25 sm:p-6">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <article className="gsat-card gsat-tech-card">
+      <div className="gsat-card-head">
         <div>
-          <p className="text-[10px] font-black tracking-[0.24em] text-slate-500">{metal.toUpperCase()} TECHNICAL ENGINE</p>
-          <h3 className="mt-2 text-2xl font-black tracking-tight text-white">EMA • RSI • MACD • S/R</h3>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">{a.overall?.summary ?? "GSAT is analyzing the current XAUS series."}</p>
+          <div className="gsat-kicker">{metal.toUpperCase()} TECHNICAL ANALYSIS</div>
+          <div className="gsat-card-subtitle">EMA 20 / 50 / 200 · current price relationship</div>
         </div>
-        <div className="flex items-center gap-4 rounded-2xl border border-slate-700/70 bg-[#081321] p-4">
-          <ScoreRing score={Math.min(96, score)} bias={bias} />
-          <div>
-            <Badge tone={isBullish ? "green" : "gold"}>{bias}</Badge>
-            <p className="mt-2 text-xs font-bold text-slate-300">GSAT technical confidence</p>
-            <p className="mt-1 text-[10px] text-slate-500">Derived from current EMA, RSI and MACD state.</p>
-          </div>
-        </div>
+        <span className={`gsat-bias ${dataTone(bias)}`}>{bias}</span>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-        {emaItems.map(([name, value, relation, term]) => {
-          const tone: Tone = relation === "Above" ? "green" : relation === "Below" ? "red" : "gold";
-          return <MetricCard key={name} label={name} value={money(value)} helper={`${term} trend • Price ${money(a.price)}`} tone={tone} badge={relation} />;
-        })}
-      </div>
-      <p className="mt-4 rounded-2xl border border-slate-700/70 bg-[#081321] p-4 text-sm leading-6 text-slate-300">{a.ema.interpretation ?? "EMA structure is being evaluated."}</p>
-
-      <div className="mt-5 grid gap-4 xl:grid-cols-2">
-        <div className="rounded-2xl border border-emerald-400/20 bg-[#071a18] p-4 shadow-xl shadow-emerald-950/10">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black tracking-[0.2em] text-emerald-300">SUPPORT ZONES</p>
-              <p className="mt-1 text-xs text-slate-500">Nearest → major</p>
-            </div>
-            <Badge tone="green">Demand</Badge>
-          </div>
-          <div className="mt-4 grid gap-3">
-            {supports.length ? supports.map((l, i) => (
-              <div key={`${levelPrice(l)}-${i}`} className="flex items-center justify-between gap-4 rounded-xl border border-emerald-400/15 bg-emerald-400/[0.045] px-4 py-3">
-                <div>
-                  <p className="font-mono text-lg font-black text-emerald-300">{money(levelPrice(l))}</p>
-                  <p className="mt-1 text-[10px] font-bold tracking-[0.15em] text-slate-500">S{i + 1}</p>
-                </div>
-                <p className="text-right text-[10px] font-semibold leading-5 text-slate-400">{levelStrength(l) != null ? `Strength ${levelStrength(l)}` : "Pivot"}<br />{levelTouches(l) != null ? `${levelTouches(l)} touches` : "Confirmed level"}</p>
-              </div>
-            )) : <p className="text-sm text-slate-500">No confirmed support</p>}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-rose-400/20 bg-[#1b0b14] p-4 shadow-xl shadow-rose-950/10">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black tracking-[0.2em] text-rose-300">RESISTANCE ZONES</p>
-              <p className="mt-1 text-xs text-slate-500">Nearest → major</p>
-            </div>
-            <Badge tone="red">Supply</Badge>
-          </div>
-          <div className="mt-4 grid gap-3">
-            {resistances.length ? resistances.map((l, i) => (
-              <div key={`${levelPrice(l)}-${i}`} className="flex items-center justify-between gap-4 rounded-xl border border-rose-400/15 bg-rose-400/[0.045] px-4 py-3">
-                <div>
-                  <p className="font-mono text-lg font-black text-rose-300">{money(levelPrice(l))}</p>
-                  <p className="mt-1 text-[10px] font-bold tracking-[0.15em] text-slate-500">R{i + 1}</p>
-                </div>
-                <p className="text-right text-[10px] font-semibold leading-5 text-slate-400">{levelStrength(l) != null ? `Strength ${levelStrength(l)}` : "Pivot"}<br />{levelTouches(l) != null ? `${levelTouches(l)} touches` : "Confirmed level"}</p>
-              </div>
-            )) : <p className="text-sm text-slate-500">No confirmed resistance</p>}
-          </div>
-        </div>
+      <div className="gsat-ema-grid">
+        <EmaCard label="EMA 20" value={analysis.ema.ema20} relation={analysis.ema.priceVsEma20} price={analysis.price} />
+        <EmaCard label="EMA 50" value={analysis.ema.ema50} relation={analysis.ema.priceVsEma50} price={analysis.price} />
+        <EmaCard label="EMA 200" value={analysis.ema.ema200} relation={analysis.ema.priceVsEma200} price={analysis.price} />
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <MetricCard label="RSI 14" value={a.momentum.rsi14 == null ? "--" : a.momentum.rsi14.toFixed(2)} helper={a.momentum.interpretation ?? "Momentum is being evaluated from RSI."} tone={a.momentum.rsi14 != null && a.momentum.rsi14 > 55 ? "green" : "gold"} badge={a.momentum.rsiBias} />
-        <MetricCard label="MACD 12/26/9" value={a.momentum.macd == null ? "--" : a.momentum.macd.toFixed(4)} helper={`Signal ${a.momentum.macdSignal == null ? "--" : a.momentum.macdSignal.toFixed(4)} • Hist ${a.momentum.macdHistogram == null ? "--" : a.momentum.macdHistogram.toFixed(4)}`} tone={a.momentum.macdHistogram != null && a.momentum.macdHistogram > 0 ? "green" : "red"} badge={a.momentum.macdBias} />
-      </div>
-    </article>
-  );
-}
+      {analysis.ema.interpretation ? <div className="gsat-note">{analysis.ema.interpretation}</div> : null}
 
-function MultiTimeframe({ analysis }: { analysis: Analysis | null }) {
-  const base = analysis?.supportResistance;
-  const supports = base?.supports ?? [];
-  const resistances = base?.resistances ?? [];
-  const rows = [
-    ["15M", supports[0], resistances[0]],
-    ["1H", supports[0], resistances[0]],
-    ["4H", supports[1] ?? supports[0], resistances[1] ?? resistances[0]],
-    ["Daily", supports[2] ?? supports[1] ?? supports[0], resistances[2] ?? resistances[1] ?? resistances[0]],
-    ["Weekly", supports[2] ?? supports[1] ?? supports[0], resistances[2] ?? resistances[1] ?? resistances[0]],
-  ] as const;
-  return (
-    <article className="rounded-3xl border border-slate-700/80 bg-[#0b1728] p-5 shadow-2xl shadow-black/25 sm:p-6">
-      <SectionTitle eyebrow="STRUCTURE MATRIX" title="Multi-Timeframe Levels" detail="GSAT current technical map" />
-      <div className="overflow-hidden rounded-2xl border border-slate-700/80">
-        <div className="grid grid-cols-[0.75fr_1fr_1fr] bg-[#081321] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 sm:px-5">
-          <div>Timeframe</div><div>Support</div><div>Resistance</div>
-        </div>
-        {rows.map(([timeframe, support, resistance]) => (
-          <div key={timeframe} className="grid grid-cols-[0.75fr_1fr_1fr] items-center border-t border-slate-800/90 px-4 py-4 sm:px-5">
-            <div className="text-sm font-black text-slate-200">{timeframe}</div>
-            <div className="flex items-center gap-2 text-sm font-mono font-bold text-emerald-300"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/30" />{support == null ? "--" : money(levelPrice(support))}</div>
-            <div className="flex items-center gap-2 text-sm font-mono font-bold text-rose-300"><span className="h-2.5 w-2.5 rounded-full bg-rose-400 shadow-lg shadow-rose-400/30" />{resistance == null ? "--" : money(levelPrice(resistance))}</div>
-          </div>
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function TradePlan({ analysis, gold }: { analysis: Analysis | null; gold: Quote | undefined }) {
-  const price = gold?.price ?? analysis?.price ?? null;
-  const support = analysis?.supportResistance.supports[0];
-  const resistance = analysis?.supportResistance.resistances[0];
-  const supportPx = support == null ? null : levelPrice(support);
-  const resistancePx = resistance == null ? null : levelPrice(resistance);
-  const bullish = !!analysis && /bull|buy/i.test(analysis.overall?.bias ?? "") && (analysis.momentum.macdHistogram ?? 0) >= 0;
-  return (
-    <article className="rounded-3xl border border-amber-300/20 bg-gradient-to-br from-[#111b2c] to-[#091321] p-5 shadow-2xl shadow-black/30 sm:p-6">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="gsat-level-columns">
         <div>
-          <p className="text-[10px] font-black tracking-[0.24em] text-amber-300">GSAT TRADE PLAN</p>
-          <h3 className="mt-2 text-2xl font-black text-white">Today's Gold Setup</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">This panel converts the existing technical read into a clean decision framework. It does not create new market data.</p>
+          <div className="gsat-section-label support">SUPPORT</div>
+          <div className="gsat-level-list">
+            {supports.length ? supports.map((level, i) => <LevelRow key={`s-${i}-${levelPrice(level)}`} level={level} label={`S${i + 1}`} kind="support" />) : <div className="gsat-empty">No confirmed support</div>}
+          </div>
         </div>
-        <Badge tone={bullish ? "green" : "gold"}>{bullish ? "BUY ON CONFIRMATION" : "WAIT FOR CONFIRMATION"}</Badge>
+        <div>
+          <div className="gsat-section-label resistance">RESISTANCE</div>
+          <div className="gsat-level-list">
+            {resistances.length ? resistances.map((level, i) => <LevelRow key={`r-${i}-${levelPrice(level)}`} level={level} label={`R${i + 1}`} kind="resistance" />) : <div className="gsat-empty">No confirmed resistance</div>}
+          </div>
+        </div>
       </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="LIVE PRICE" value={money(price)} helper="Current XAUS spot" tone="blue" />
-        <MetricCard label="BUY ZONE" value={supportPx == null ? "--" : money(supportPx)} helper="Nearest structural support" tone="green" />
-        <MetricCard label="TARGET ZONE" value={resistancePx == null ? "--" : money(resistancePx)} helper="Nearest structural resistance" tone="red" />
-        <MetricCard label="CONFIDENCE" value={analysis ? `${Math.min(96, bullish ? 82 : 58)}/100` : "--"} helper="Technical confidence, not a guarantee" tone="gold" />
-      </div>
-    </article>
-  );
-}
 
-function MacroPlaceholder() {
-  return (
-    <article className="rounded-3xl border border-slate-700/80 bg-[#0b1728] p-5 shadow-2xl shadow-black/25 sm:p-6">
-      <SectionTitle eyebrow="MACRO REGIME" title="Macro Dashboard" detail="Prepared for the next data integration phase" />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="DXY" value="--" helper="Dollar index integration pending" tone="blue" />
-        <MetricCard label="US YIELDS" value="--" helper="Treasury curve integration pending" tone="muted" />
-        <MetricCard label="OIL" value="--" helper="Energy complex integration pending" tone="gold" />
-        <MetricCard label="RISK" value="--" helper="Volatility regime integration pending" tone="red" />
-      </div>
-    </article>
-  );
-}
-
-function PatternPlaceholder() {
-  return (
-    <article className="rounded-3xl border border-slate-700/80 bg-[#0b1728] p-5 shadow-2xl shadow-black/25 sm:p-6">
-      <SectionTitle eyebrow="PATTERN ENGINE" title="Pattern Detection" detail="Technical pattern module" />
-      <div className="grid gap-3 md:grid-cols-3">
-        <MetricCard label="TREND STRUCTURE" value="AUTO" helper="Higher-high / lower-low recognition slot" tone="blue" />
-        <MetricCard label="CANDLE PATTERNS" value="READY" helper="Engulfing, pin bar and reversal pattern slot" tone="gold" />
-        <MetricCard label="BREAKOUT STATE" value="WATCH" helper="Support/resistance expansion slot" tone="green" />
+      <div className="gsat-momentum-grid">
+        <div className="gsat-momentum-card">
+          <div className="gsat-section-label">RSI 14</div>
+          <div className="gsat-momentum-value">{analysis.momentum.rsi14 == null ? "--" : analysis.momentum.rsi14.toFixed(2)}</div>
+          <div className={`gsat-momentum-badge ${dataTone(analysis.momentum.rsiBias)}`}>{analysis.momentum.rsiBias}</div>
+        </div>
+        <div className="gsat-momentum-card">
+          <div className="gsat-section-label">MACD 12 / 26 / 9</div>
+          <div className="gsat-momentum-value">{analysis.momentum.macd == null ? "--" : analysis.momentum.macd.toFixed(4)}</div>
+          <div className={`gsat-momentum-badge ${dataTone(analysis.momentum.macdBias)}`}>{analysis.momentum.macdBias}</div>
+          <div className="gsat-card-subtitle">Signal {analysis.momentum.macdSignal == null ? "--" : analysis.momentum.macdSignal.toFixed(4)} · Hist {analysis.momentum.macdHistogram == null ? "--" : analysis.momentum.macdHistogram.toFixed(4)}</div>
+        </div>
       </div>
     </article>
   );
@@ -369,16 +273,16 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
       setError("");
-      const q = await fetch(`/api/quotes?fresh=${Date.now()}`, { cache: "no-store" });
-      if (!q.ok) throw new Error("Live spot request failed");
-      const qData = await q.json();
-      setData(qData);
-      const a = await fetch(`/api/analysis?hours=72&fresh=${Date.now()}`, { cache: "no-store" });
-      const aData = await a.json();
-      if (!a.ok) throw new Error(aData?.error || "Technical analysis unavailable");
-      setAnalysis(aData);
+      setLoading(true);
+      const quoteResponse = await fetch(`/api/quotes?fresh=${Date.now()}`, { cache: "no-store" });
+      if (!quoteResponse.ok) throw new Error("Live spot request failed");
+      setData(await quoteResponse.json());
+
+      const analysisResponse = await fetch(`/api/analysis?hours=72&fresh=${Date.now()}`, { cache: "no-store" });
+      const analysisData = await analysisResponse.json();
+      if (!analysisResponse.ok) throw new Error(analysisData?.error || "Technical analysis unavailable");
+      setAnalysis(analysisData);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Live market data unavailable");
     } finally {
@@ -392,73 +296,83 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const status = useMemo(() => statusFromQuotes(data.quotes), [data.quotes]);
   const gold = data.quotes.find((q) => q.label === "Gold");
   const silver = data.quotes.find((q) => q.label === "Silver");
-  const ratio = gold && silver && silver.price > 0 ? gold.price / silver.price : null;
   const goldAnalysis = analysis?.gold.intraday ?? null;
   const silverAnalysis = analysis?.silver.intraday ?? null;
+  const latest = useMemo(() => {
+    const timestamps = data.quotes.filter((q) => q.providerUpdatedAt).map((q) => Date.parse(q.providerUpdatedAt as string));
+    const timestamp = timestamps.length ? Math.max(...timestamps) : NaN;
+    if (!Number.isFinite(timestamp)) return "Data timestamp unavailable";
+    const age = Math.max(0, Date.now() - timestamp) / 1000;
+    return age <= 90 ? `Fresh · ${Math.round(age)}s ago` : `Stale · ${Math.round(age / 60)}m ago`;
+  }, [data.quotes]);
 
   return (
-    <main className="min-h-screen w-full bg-transparent px-3 py-4 text-slate-100 sm:px-5 lg:px-8">
-      <div className="mx-auto grid max-w-[1500px] gap-5">
-        <header className="rounded-3xl border border-slate-700/80 bg-gradient-to-br from-[#101e31] via-[#0b1728] to-[#081321] p-5 shadow-2xl shadow-black/30 sm:p-6 lg:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[11px] font-black tracking-[0.34em] text-amber-300">GSAT</p>
-                <Badge tone="green">LIVE TERMINAL</Badge>
-                <Badge tone="blue">XAU/USD • XAG/USD</Badge>
-              </div>
-              <h1 className="mt-3 max-w-3xl text-3xl font-black tracking-tight text-white sm:text-5xl">Gold &amp; Silver Analysis Terminal</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">Spot market intelligence, TradingView charts, technical structure and decision-ready levels in one screen.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-              <Badge tone={status.label.includes("FRESH") ? "green" : "gold"}>{status.label}</Badge>
-              <span className="rounded-full border border-slate-700 bg-[#07101c] px-3 py-2 text-[10px] font-bold text-slate-400">{status.detail}</span>
-              <button onClick={() => void load()} className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-amber-200 transition hover:bg-amber-300/15">{loading ? "Refreshing…" : "Refresh"}</button>
-            </div>
+    <main className="gsat-shell">
+      <header className="gsat-header">
+        <div>
+          <div className="gsat-brand-row">
+            <span className="gsat-brand">GSAT</span>
+            <span className="gsat-status-dot"><span /> LIVE</span>
           </div>
-        </header>
+          <h1>Gold &amp; Silver Analysis Terminal</h1>
+          <p>Live spot prices and systematic technical analysis.</p>
+        </div>
+        <div className="gsat-header-right">
+          <div className="gsat-update">{latest}</div>
+          <button className="gsat-refresh" onClick={() => void load()}>{loading ? "Refreshing…" : "Refresh"}</button>
+        </div>
+      </header>
 
-        <section>
-          <SectionTitle eyebrow="MARKET SNAPSHOT" title="Live Spot Market" detail="XAUS • refreshed every 60 seconds" />
-          <div className="grid gap-4 md:grid-cols-3">
-            <MetricCard label="GOLD SPOT / USD" value={money(gold?.price ?? null)} helper={`XAUS • ${gold?.providerUpdatedAt ? new Date(gold.providerUpdatedAt).toLocaleTimeString("en-IN") : "--"}`} tone="gold" badge="LIVE" />
-            <MetricCard label="SILVER SPOT / USD" value={money(silver?.price ?? null)} helper={`XAUS • ${silver?.providerUpdatedAt ? new Date(silver.providerUpdatedAt).toLocaleTimeString("en-IN") : "--"}`} tone="blue" badge="LIVE" />
-            <MetricCard label="GOLD / SILVER RATIO" value={ratio == null ? "--" : ratio.toFixed(2)} helper="Calculated from live XAUS spot prices" tone="muted" />
+      {error ? <div className="gsat-error">{error}</div> : null}
+
+      <section className="gsat-section">
+        <div className="gsat-section-heading">
+          <div>
+            <div className="gsat-kicker">MARKET SNAPSHOT</div>
+            <h2>Spot Prices</h2>
           </div>
-        </section>
+          <div className="gsat-card-subtitle">USD per troy ounce</div>
+        </div>
+        <div className="gsat-grid-3">
+          <SpotCard quote={gold} accent="gold" />
+          <SpotCard quote={silver} accent="silver" />
+          <RatioCard gold={gold} silver={silver} />
+        </div>
+      </section>
 
-        <section>
-          <SectionTitle eyebrow="PRICE ACTION" title="TradingView Charts" detail="Hourly view • RSI + MACD enabled" />
-          <div className="grid gap-5 xl:grid-cols-2">
-            <TradingViewChart symbol="OANDA:XAUUSD" title="GOLD SPOT / USD" />
-            <TradingViewChart symbol="OANDA:XAGUSD" title="SILVER SPOT / USD" />
+      <section className="gsat-section">
+        <div className="gsat-section-heading">
+          <div>
+            <div className="gsat-kicker">MARKET CHARTS</div>
+            <h2>TradingView</h2>
           </div>
-        </section>
+          <div className="gsat-card-subtitle">1H · OANDA spot · RSI + MACD</div>
+        </div>
+        <div className="gsat-grid-2">
+          <TradingViewChart symbol="OANDA:XAUUSD" title="GOLD · XAU/USD" />
+          <TradingViewChart symbol="OANDA:XAGUSD" title="SILVER · XAG/USD" />
+        </div>
+      </section>
 
-        <section>
-          <SectionTitle eyebrow="TECHNICAL INTELLIGENCE" title="Market Bias &amp; Indicators" detail="Calculated from the XAUS recorded intraday series" />
-          <div className="grid gap-5 xl:grid-cols-2">
-            <TechnicalSummary metal="Gold" a={goldAnalysis} />
-            <TechnicalSummary metal="Silver" a={silverAnalysis} />
+      <section className="gsat-section">
+        <div className="gsat-section-heading">
+          <div>
+            <div className="gsat-kicker">TECHNICAL ENGINE</div>
+            <h2>EMA Analysis</h2>
           </div>
-        </section>
+          <div className="gsat-card-subtitle">Real-time relationship to EMA 20 / 50 / 200</div>
+        </div>
+        <div className="gsat-grid-2">
+          <TechnicalCard metal="Gold" analysis={goldAnalysis} />
+          <TechnicalCard metal="Silver" analysis={silverAnalysis} />
+        </div>
+      </section>
 
-        <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <MultiTimeframe analysis={goldAnalysis} />
-          <TradePlan analysis={goldAnalysis} gold={gold} />
-        </section>
-
-        <section className="grid gap-5 xl:grid-cols-2">
-          <MacroPlaceholder />
-          <PatternPlaceholder />
-        </section>
-
-        {(error || data.spotError) && <section className="rounded-2xl border border-rose-400/20 bg-rose-400/[0.05] p-4 text-xs font-semibold text-rose-300">{error || data.spotError}</section>}
-        <footer className="border-t border-slate-800/90 py-3 text-center text-[9px] font-bold tracking-[0.16em] text-slate-600 sm:text-left">GSAT • XAUS SPOT • TRADINGVIEW/OANDA • TECHNICAL ENGINE</footer>
-      </div>
+      <footer className="gsat-footer">
+        GSAT · Spot data via XAUS · Technical calculations from current intraday series
+      </footer>
     </main>
   );
 }
