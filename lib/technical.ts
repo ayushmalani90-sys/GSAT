@@ -47,7 +47,10 @@ export function supportResistance(candles: TechnicalCandle[], current: number, a
     const values = candidates.filter(x => x.type === type).map(x => x.price).sort((a, b) => a - b);
     const groups: number[][] = [];
     for (const value of values) {
-      const group = groups.find(g => { const center = median(g); return center != null && Math.abs(value - center) <= minSeparation; });
+      const group = groups.find(g => {
+        const center = median(g);
+        return center != null && Math.abs(value - center) <= minSeparation;
+      });
       if (group) group.push(value); else groups.push([value]);
     }
     return groups.map(group => {
@@ -65,58 +68,59 @@ export function fibonacci(candles: TechnicalCandle[], current: number) {
   const recent = candles.slice(-Math.min(candles.length, 250));
   if (recent.length < 30) return { swingLow: null, swingHigh: null, levels: [], interpretation: "Insufficient history for Fibonacci." };
   const pivotWindow = 3;
-  const pivotsHigh: Array<{ price: number; index: number }> = [];
-  const pivotsLow: Array<{ price: number; index: number }> = [];
+  const highs: Array<{ price: number; index: number }> = [];
+  const lows: Array<{ price: number; index: number }> = [];
   for (let i = pivotWindow; i < recent.length - pivotWindow; i += 1) {
     const c = recent[i];
-    const left = recent.slice(i - pivotWindow, i);
-    const right = recent.slice(i + 1, i + pivotWindow + 1);
-    if (left.every(x => c.h >= x.h) && right.every(x => c.h >= x.h)) pivotsHigh.push({ price: c.h, index: i });
-    if (left.every(x => c.l <= x.l) && right.every(x => c.l <= x.l)) pivotsLow.push({ price: c.l, index: i });
+    if (recent.slice(i - pivotWindow, i).every(x => c.h >= x.h) && recent.slice(i + 1, i + pivotWindow + 1).every(x => c.h >= x.h)) highs.push({ price: c.h, index: i });
+    if (recent.slice(i - pivotWindow, i).every(x => c.l <= x.l) && recent.slice(i + 1, i + pivotWindow + 1).every(x => c.l <= x.l)) lows.push({ price: c.l, index: i });
   }
-  if (!pivotsHigh.length || !pivotsLow.length) return { swingLow: null, swingHigh: null, levels: [], interpretation: "No confirmed structural swing pair." };
-  const lastHigh = pivotsHigh.at(-1)!;
-  const lastLow = pivotsLow.at(-1)!;
-  let high = lastHigh.price, low = lastLow.price;
-  if (lastHigh.index < lastLow.index) {
-    const highsBeforeLow = pivotsHigh.filter(x => x.index < lastLow.index);
-    if (highsBeforeLow.length) high = highsBeforeLow.at(-1)!.price;
+  if (!highs.length || !lows.length) return { swingLow: null, swingHigh: null, levels: [], interpretation: "No confirmed structural swing pair." };
+  const latestHigh = highs.at(-1)!;
+  const latestLow = lows.at(-1)!;
+  let swingHigh = latestHigh.price;
+  let swingLow = latestLow.price;
+  if (latestHigh.index < latestLow.index) {
+    const h = highs.filter(x => x.index < latestLow.index).at(-1);
+    if (h) swingHigh = h.price;
   } else {
-    const lowsBeforeHigh = pivotsLow.filter(x => x.index < lastHigh.index);
-    if (lowsBeforeHigh.length) low = lowsBeforeHigh.at(-1)!.price;
+    const l = lows.filter(x => x.index < latestHigh.index).at(-1);
+    if (l) swingLow = l.price;
   }
-  const range = high - low;
-  if (!(range > 0)) return { swingLow: round(low, 2), swingHigh: round(high, 2), levels: [], interpretation: "No meaningful swing range." };
-  const bullishImpulse = lastHigh.index > lastLow.index;
+  const range = swingHigh - swingLow;
+  if (!(range > 0)) return { swingLow: round(swingLow, 2), swingHigh: round(swingHigh, 2), levels: [], interpretation: "No meaningful swing range." };
+  const bullishImpulse = latestHigh.index > latestLow.index;
   const ratios = [0.236, 0.382, 0.5, 0.618, 0.786];
-  const levels = ratios.map(r => ({ ratio: `${(r * 100).toFixed(1)}%`, price: round(bullishImpulse ? high - range * r : low + range * r, 2) }));
+  const levels = ratios.map(r => ({ ratio: `${(r * 100).toFixed(1)}%`, price: round(bullishImpulse ? swingHigh - range * r : swingLow + range * r, 2) }));
   const nearest = [...levels].sort((a, b) => Math.abs(current - a.price) - Math.abs(current - b.price))[0];
-  return { swingLow: round(low, 2), swingHigh: round(high, 2), levels, interpretation: nearest ? `Price is nearest to the ${nearest.ratio} Fibonacci retracement at ${nearest.price}.` : "Fibonacci context available." };
+  return { swingLow: round(swingLow, 2), swingHigh: round(swingHigh, 2), levels, interpretation: nearest ? `Price is nearest to the ${nearest.ratio} Fibonacci retracement at ${nearest.price}.` : "Fibonacci context available." };
 }
 
 export function volumeProfile(candles: TechnicalCandle[], bins = 24) {
-  if (candles.length < 40) return { poc: null, highVolumeNodes: [], lowVolumeNodes: [], interpretation: "Insufficient candle history for volume profile." };
+  if (candles.length < 40) return { poc: null, highVolumeNodes: [], lowVolumeNodes: [], interpretation: "Insufficient history for volume profile." };
   const recent = candles.slice(-Math.min(candles.length, 300));
   const min = Math.min(...recent.map(c => c.l));
   const max = Math.max(...recent.map(c => c.h));
   const span = max - min;
   if (!(span > 0)) return { poc: min, highVolumeNodes: [], lowVolumeNodes: [], interpretation: "No meaningful price range." };
-  const bucketVolume = Array.from({ length: bins }, () => 0);
   const width = span / bins;
+  const bucketVolume = Array.from({ length: bins }, () => 0);
   for (const c of recent) {
     const typical = (c.h + c.l + c.c) / 3;
     const index = Math.max(0, Math.min(bins - 1, Math.floor((typical - min) / width)));
     const volume = Number.isFinite(c.tickVolume) ? c.tickVolume! : Number.isFinite(c.volume) ? c.volume! : 1;
     bucketVolume[index] += volume;
   }
-  const maxVol = Math.max(...bucketVolume), minVol = Math.min(...bucketVolume), pocIndex = bucketVolume.indexOf(maxVol);
+  const maxVol = Math.max(...bucketVolume);
+  const minVol = Math.min(...bucketVolume);
+  const pocIndex = bucketVolume.indexOf(maxVol);
   const highVolumeNodes = bucketVolume.map((v, i) => ({ v, p: min + width * (i + 0.5) })).filter(x => x.v >= maxVol * 0.75).sort((a, b) => b.v - a.v).slice(0, 3).map(x => round(x.p, 2));
   const lowVolumeNodes = bucketVolume.map((v, i) => ({ v, p: min + width * (i + 0.5) })).filter(x => x.v <= minVol + Math.max(1e-9, maxVol * 0.15)).sort((a, b) => a.v - b.v).slice(0, 3).map(x => round(x.p, 2));
-  const source = recent.some(c => Number.isFinite(c.tickVolume)) ? "tick volume" : recent.some(c => Number.isFinite(c.volume)) ? "volume" : "no volume; equal candle weight";
-  return { poc: round(min + width * (pocIndex + 0.5), 2), highVolumeNodes, lowVolumeNodes, interpretation: `Volume profile uses completed candles over the recent profile window with ${source}; it is an approximation of volume-at-price rather than exchange order-book volume.` };
+  const source = recent.some(c => Number.isFinite(c.tickVolume)) ? "tick volume" : recent.some(c => Number.isFinite(c.volume)) ? "volume" : "equal candle weight";
+  return { poc: round(min + width * (pocIndex + 0.5), 2), highVolumeNodes, lowVolumeNodes, interpretation: `Volume profile uses ${source} over completed candles; it is an approximation of volume-at-price, not exchange order-book volume.` };
 }
 
-function detectPatterns(candles: TechnicalCandle[], current: number) {
+function detectPatterns(candles: TechnicalCandle[]) {
   const recent = candles.slice(-40);
   const patterns: TechnicalAnalysis["patterns"] = [];
   if (recent.length < 12) return patterns;
@@ -124,19 +128,12 @@ function detectPatterns(candles: TechnicalCandle[], current: number) {
   const prev = recent.at(-2)!;
   const body = Math.abs(last.c - last.o);
   const range = Math.max(last.h - last.l, 1e-9);
-  const upperWick = last.h - Math.max(last.o, last.c);
-  const lowerWick = Math.min(last.o, last.c) - last.l;
-  if (lowerWick >= Math.max(body * 2, range * 0.5) && last.c >= last.o) patterns.push({ name: "Bullish Rejection", direction: "Bullish", confidence: 65, description: "Long lower wick and non-bearish close indicate rejection of lower prices." });
-  if (upperWick >= Math.max(body * 2, range * 0.5) && last.c <= last.o) patterns.push({ name: "Bearish Rejection", direction: "Bearish", confidence: 65, description: "Long upper wick and non-bullish close indicate rejection of higher prices." });
+  const upper = last.h - Math.max(last.o, last.c);
+  const lower = Math.min(last.o, last.c) - last.l;
+  if (lower >= Math.max(body * 2, range * 0.5) && last.c >= last.o) patterns.push({ name: "Bullish Rejection", direction: "Bullish", confidence: 65, description: "Long lower wick and non-bearish close indicate rejection of lower prices." });
+  if (upper >= Math.max(body * 2, range * 0.5) && last.c <= last.o) patterns.push({ name: "Bearish Rejection", direction: "Bearish", confidence: 65, description: "Long upper wick and non-bullish close indicate rejection of higher prices." });
   if (last.c > last.o && prev.c < prev.o && last.o <= prev.c && last.c >= prev.o) patterns.push({ name: "Bullish Engulfing", direction: "Bullish", confidence: 70, description: "Latest bullish body fully engulfs the prior bearish body." });
   if (last.c < last.o && prev.c > prev.o && last.o >= prev.c && last.c <= prev.o) patterns.push({ name: "Bearish Engulfing", direction: "Bearish", confidence: 70, description: "Latest bearish body fully engulfs the prior bullish body." });
-  const highs = recent.map(c => c.h), lows = recent.map(c => c.l);
-  const resistance = Math.max(...recent.slice(0, 20).map(c => c.h));
-  const support = Math.min(...recent.slice(0, 20).map(c => c.l));
-  const higherLows = lows.slice(20).at(-1)! > lows.slice(0, 20).reduce((a, b) => Math.min(a, b), Infinity) + range * 2;
-  const lowerHighs = highs.slice(20).at(-1)! < highs.slice(0, 20).reduce((a, b) => Math.max(a, b), -Infinity) - range * 2;
-  if (Math.abs(resistance - Math.max(...recent.slice(20).map(c => c.h))) <= range * 1.5 && higherLows) patterns.push({ name: "Ascending Triangle", direction: "Bullish", confidence: 65, description: "Recent resistance is broadly flat while the later range holds higher lows." });
-  if (Math.abs(support - Math.min(...recent.slice(20).map(c => c.l))) <= range * 1.5 && lowerHighs) patterns.push({ name: "Descending Triangle", direction: "Bearish", confidence: 65, description: "Recent support is broadly flat while the later range holds lower highs." });
   return patterns.slice(0, 4);
 }
 
@@ -149,29 +146,28 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const bullish = [e20, e50, e200].filter(e => price != null && e != null && price > e).length;
   const bearish = [e20, e50, e200].filter(e => price != null && e != null && price < e).length;
   const emaBias = bullish >= 2 ? "Bullish EMA structure" : bearish >= 2 ? "Bearish EMA structure" : "Mixed EMA structure";
-  const emaInterpretation = `${emaBias}. Price is ${relation(e20).toLowerCase()} EMA20, ${relation(e50).toLowerCase()} EMA50 and ${relation(e200).toLowerCase()} EMA200.`;
   const rsi14 = rsi(closes, 14);
   const rsiBias = rsi14 == null ? "RSI unavailable" : rsi14 >= 70 ? "Overbought momentum" : rsi14 <= 30 ? "Oversold momentum" : rsi14 >= 50 ? "Bullish momentum" : "Bearish momentum";
   const m = macd(closes, 12, 26, 9);
   const macdBias = m.histogram == null ? "MACD unavailable" : m.histogram > 0 ? "Bullish MACD momentum" : m.histogram < 0 ? "Bearish MACD momentum" : "Neutral MACD momentum";
   const atr14 = atr(sorted, 14);
-  const atrPercent = price != null && atr14 != null && price !== 0 ? (atr14 / Math.abs(price)) * 100 : null;
+  const atrPercent = price != null && atr14 != null && price !== 0 ? atr14 / Math.abs(price) * 100 : null;
   const sr = price != null ? supportResistance(sorted, price, atr14) : { supports: [], resistances: [], method: "Price unavailable." };
   const fib = price != null ? fibonacci(sorted, price) : { swingLow: null, swingHigh: null, levels: [], interpretation: "Price unavailable." };
   const vp = volumeProfile(sorted);
-  const patterns = price != null ? detectPatterns(sorted, price) : [];
+  const patterns = detectPatterns(sorted);
   const score = (emaBias.includes("Bullish") ? 1 : emaBias.includes("Bearish") ? -1 : 0) + (rsiBias.includes("Bullish") ? 1 : rsiBias.includes("Bearish") ? -1 : 0) + (macdBias.includes("Bullish") ? 1 : macdBias.includes("Bearish") ? -1 : 0) + patterns.slice(0, 2).reduce((s, p) => s + (p.direction === "Bullish" ? 0.5 : p.direction === "Bearish" ? -0.5 : 0), 0);
   const overallBias = score >= 1.5 ? "Bullish" : score <= -1.5 ? "Bearish" : "Mixed";
   return {
     price,
     samples: sorted.length,
-    ema: { ema20: e20, ema50: e50, ema200: e200, priceVsEma20: relation(e20), priceVsEma50: relation(e50), priceVsEma200: relation(e200), bias: emaBias, interpretation: emaInterpretation },
+    ema: { ema20: e20, ema50: e50, ema200: e200, priceVsEma20: relation(e20), priceVsEma50: relation(e50), priceVsEma200: relation(e200), bias: emaBias, interpretation: `${emaBias}. Price is ${relation(e20).toLowerCase()} EMA20, ${relation(e50).toLowerCase()} EMA50 and ${relation(e200).toLowerCase()} EMA200.` },
     momentum: { rsi14, rsiBias, macd: m.line, macdSignal: m.signal, macdHistogram: m.histogram, macdBias, interpretation: `RSI14 is ${rsi14 == null ? "unavailable" : round(rsi14, 2)}; ${macdBias.toLowerCase()}.` },
     volatility: { atr14, atrPercent, interpretation: `ATR14 is ${atr14 == null ? "unavailable" : round(atr14, 2)} (${atrPercent == null ? "--" : `${round(atrPercent, 2)}% of price`}).` },
     supportResistance: sr,
     fibonacci: fib,
     volumeProfile: vp,
     patterns,
-    overall: { bias: overallBias, summary: `${overallBias} technical posture derived from EMA structure, RSI, MACD and detected price-action patterns; ATR is treated as a volatility measure rather than directional evidence.` },
+    overall: { bias: overallBias, summary: `${overallBias} technical posture derived from EMA structure, RSI, MACD and price-action patterns; ATR is treated as volatility, not directional evidence.` },
   };
 }
