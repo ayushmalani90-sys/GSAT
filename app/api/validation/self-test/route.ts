@@ -6,11 +6,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return NextResponse.json({
-      ok: true,
-      masterOhlc: runMasterOhlcSelfTests(),
-      indicators: runIndicatorSelfTests(),
-    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const masterOhlc = runMasterOhlcSelfTests();
+    const indicators = runIndicatorSelfTests();
+    return NextResponse.json({ ok: true, masterOhlc, indicators }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "GSAT self-test failed" },
