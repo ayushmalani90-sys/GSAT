@@ -58,6 +58,7 @@ async function fetchBiquoteCandles(symbol: "XAUUSD" | "XAGUSD", interval: string
       h: Number(bar.high),
       l: Number(bar.low),
       c: Number(bar.close),
+      v: Number.isFinite(Number(bar.volume)) && Number(bar.volume) > 0 ? Number(bar.volume) : Number.isFinite(Number(bar.tickVolume)) ? Number(bar.tickVolume) : undefined,
     }))
     .filter((c) => Boolean(c.t) && Number.isFinite(c.o) && Number.isFinite(c.h) && Number.isFinite(c.l) && Number.isFinite(c.c))
     .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
@@ -102,8 +103,8 @@ export async function GET(request: Request) {
         gold: { intraday: analyze(goldCandles) },
         silver: { intraday: analyze(silverCandles) },
         methodology: {
-          note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal, and support/resistance uses structural candle swing highs/lows with separation filtering.",
-          dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price.",
+          note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal. Support/resistance uses structural 5-bar swing highs/lows with ATR filtering, zone clustering, minimum separation, touch counts and strength scoring. Volume Profile uses BiQuote real/tick volume when supplied by the feed.",
+          dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price. Volume is therefore broker-feed volume, not centralized futures volume.",
         },
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
