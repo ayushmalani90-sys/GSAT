@@ -68,19 +68,21 @@ function emaSeries(values: number[], period: number): Array<number | null> {
 
 export function macd(values: number[], fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   if (values.length < slowPeriod) return { line: null, signal: null, histogram: null };
+
   const fastSeries = emaSeries(values, fastPeriod);
   const slowSeries = emaSeries(values, slowPeriod);
   const lineSeries: number[] = [];
-  const lineIndexes: number[] = [];
-  for (let i = 0; i < values.length; i += 1) {
+
+  for (let i = slowPeriod - 1; i < values.length; i += 1) {
     const fast = fastSeries[i];
     const slow = slowSeries[i];
-    if (fast != null && slow != null) {
-      lineSeries.push(fast - slow);
-      lineIndexes.push(i);
-    }
+    if (fast != null && slow != null) lineSeries.push(fast - slow);
   }
-  if (lineSeries.length < signalPeriod) return { line: lineSeries.at(-1) ?? null, signal: null, histogram: null };
+
+  if (!lineSeries.length) return { line: null, signal: null, histogram: null };
+
+  // The signal EMA must be seeded from the first complete MACD line value
+  // and then recursively updated across the full MACD series.
   const signal = ema(lineSeries, signalPeriod);
   const line = lineSeries.at(-1) ?? null;
   return { line, signal, histogram: line != null && signal != null ? line - signal : null };
@@ -101,8 +103,10 @@ export function atr(candles: TechnicalCandle[], period = 14): number | null {
 }
 
 export function calculateIndicators(candles: TechnicalCandle[]): IndicatorSeries {
-  const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
-  const closes = sorted.map((c) => c.c).filter(valid);
+  const sorted = [...candles]
+    .sort((a, b) => Date.parse(a.t) - Date.parse(b.t))
+    .filter((c) => [c.o, c.h, c.l, c.c].every(valid));
+  const closes = sorted.map((c) => c.c);
   const m = macd(closes, 12, 26, 9);
   return {
     ema20: ema(closes, 20),
