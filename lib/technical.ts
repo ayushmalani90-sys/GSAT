@@ -259,7 +259,7 @@ export function fibonacci(candles: TechnicalCandle[], current: number) {
   const nearest = [...levels].sort((a, b) => Math.abs(current - a.price) - Math.abs(current - b.price))[0];
   const currentRetracement = nearest?.ratio ?? null;
   const continuationAbove = bullishLeg ? high : low;
-  const bearishConfirmationBelow = bullishLeg ? levels.find(x => x.ratio === "61.8%")?.price ?? null : levels.find(x => x.ratio === "61.8%")?.price ?? null;
+  const bearishConfirmationBelow = levels.find(x => x.ratio === "61.8%")?.price ?? null;
   const interpretation = bullishLeg
     ? `Price is nearest to the ${currentRetracement ?? "active"} retracement. Bullish continuation requires acceptance above ${round(continuationAbove, 2)}; bearish confirmation is a sustained break below ${round(bearishConfirmationBelow ?? low, 2)}.`
     : `Price is nearest to the ${currentRetracement ?? "active"} retracement. Bearish continuation is favored below ${round(continuationAbove, 2)}; bullish reversal confirmation requires reclaiming ${round(bearishConfirmationBelow ?? high, 2)}.`;
@@ -286,25 +286,12 @@ export function volumeProfile(candles: TechnicalCandle[], bins = 24) {
   const minVol = Math.min(...bucketVolume);
   const pocIndex = bucketVolume.indexOf(maxVol);
   const poc = min + width * (pocIndex + 0.5);
-  const highVolumeNodes = bucketVolume
-    .map((v, i) => ({ v, p: min + width * (i + 0.5) }))
-    .filter(x => x.v >= maxVol * 0.75)
-    .sort((a, b) => b.v - a.v)
-    .slice(0, 3)
-    .map(x => round(x.p, 2));
+  const highVolumeNodes = bucketVolume.map((v, i) => ({ v, p: min + width * (i + 0.5) })).filter(x => x.v >= maxVol * 0.75).sort((a, b) => b.v - a.v).slice(0, 3).map(x => round(x.p, 2));
   const lowThreshold = minVol + Math.max(1, maxVol * 0.15);
-  const lowVolumeNodes = bucketVolume
-    .map((v, i) => ({ v, p: min + width * (i + 0.5) }))
-    .filter(x => x.v <= lowThreshold)
-    .sort((a, b) => a.v - b.v)
-    .slice(0, 3)
-    .map(x => round(x.p, 2));
-
+  const lowVolumeNodes = bucketVolume.map((v, i) => ({ v, p: min + width * (i + 0.5) })).filter(x => x.v <= lowThreshold).sort((a, b) => a.v - b.v).slice(0, 3).map(x => round(x.p, 2));
   const current = recent.at(-1)?.c ?? null;
   const position = current == null ? "Unavailable" : Math.abs(current - poc) <= width * 0.5 ? "At POC" : current > poc ? "Above POC" : "Below POC";
-  const interpretation = current == null
-    ? "Volume profile unavailable."
-    : `POC ${round(poc, 2)}. ${position}. HVN marks accepted/high-activity price; LVN marks thin participation where price can move faster.`;
+  const interpretation = current == null ? "Volume profile unavailable." : `POC ${round(poc, 2)}. ${position}. HVN marks accepted/high-activity price; LVN marks thin participation where price can move faster.`;
   return { poc: round(poc, 2), highVolumeNodes, lowVolumeNodes, interpretation, position };
 }
 
@@ -325,7 +312,6 @@ function detectPatterns(candles: TechnicalCandle[], current: number) {
   const lateHigh = Math.max(...late.map(c => c.h));
   const earlyLow = Math.min(...early.map(c => c.l));
   const lateLow = Math.min(...late.map(c => c.l));
-
   if (Math.abs(earlyHigh - lateHigh) <= eps && lateLow > earlyLow + eps * 0.5) patterns.push({ name: "Ascending Triangle", direction: "Bullish", confidence: 72, description: "Repeated resistance with rising swing lows; breakout above resistance confirms continuation." });
   if (Math.abs(earlyLow - lateLow) <= eps && lateHigh < earlyHigh - eps * 0.5) patterns.push({ name: "Descending Triangle", direction: "Bearish", confidence: 72, description: "Repeated support with falling swing highs; breakdown below support confirms continuation." });
   if (lowerWick > body * 2 && lowerWick > upperWick * 1.5 && last.c >= last.o) patterns.push({ name: "Bullish Rejection", direction: "Bullish", confidence: 68, description: "Demand rejected lower prices; bullish only while the rejection low holds." });
@@ -351,7 +337,6 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const alignmentBear = e20 != null && e50 != null && e200 != null && e20 < e50 && e50 < e200;
   const emaBias = alignmentBull || bullishCount >= 2 ? "Bullish EMA structure" : alignmentBear || bearishCount >= 2 ? "Bearish EMA structure" : "Mixed EMA structure";
   const emaInterpretation = emaBias.startsWith("Bullish") ? "Price is above most EMAs and the moving-average stack favors upside structure." : emaBias.startsWith("Bearish") ? "Price is below most EMAs and the moving-average stack favors downside structure." : "Price is mixed around the EMA stack; trend confirmation is incomplete.";
-
   const rr = rsi(closes, 14);
   const mm = macd(closes);
   const atrValue = atr(sorted, 14);
@@ -362,7 +347,6 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const fib = price == null ? { swingLow: null, swingHigh: null, levels: [], currentRetracement: null, continuationAbove: null, bearishConfirmationBelow: null, interpretation: "No price available." } : fibonacci(sorted, price);
   const vp = volumeProfile(sorted);
   const patterns = price == null ? [] : detectPatterns(sorted, price);
-
   const nearestSupport = sr.supports.find(x => x.price < (price ?? Infinity)) ?? null;
   const nearestResistance = sr.resistances.find(x => x.price > (price ?? -Infinity)) ?? null;
   const supportDistance = nearestSupport && price ? (price - nearestSupport.price) / Math.max(atrValue ?? price * 0.005, 1e-9) : null;
@@ -371,7 +355,6 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   let score = 0;
   let weight = 0;
   const add = (value: number, w: number) => { score += Math.max(-1, Math.min(1, value)) * w; weight += w; };
-
   add(emaBias.startsWith("Bullish") ? 1 : emaBias.startsWith("Bearish") ? -1 : 0, 25);
   add(rr == null ? 0 : rr >= 55 && rr < 70 ? 1 : rr <= 45 && rr > 30 ? -1 : rr >= 70 ? 0.25 : rr <= 30 ? -0.25 : 0, 15);
   add(mm.line != null && mm.signal != null ? (mm.line > mm.signal ? 1 : mm.line < mm.signal ? -1 : 0) : 0, 15);
@@ -386,7 +369,6 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const normalized = weight ? score / weight : 0;
   const confidence = Math.round(Math.min(100, Math.max(0, 50 + Math.abs(normalized) * 50)));
   const overallBias: TechnicalAnalysis["overall"]["bias"] = normalized >= 0.22 ? "Bullish" : normalized <= -0.22 ? "Bearish" : Math.abs(normalized) < 0.1 ? "Neutral" : "Mixed";
-
   const trendText = emaBias.startsWith("Bullish") ? "Trend structure is bullish" : emaBias.startsWith("Bearish") ? "Trend structure is bearish" : "Trend structure is mixed";
   const momentumText = macdBias.startsWith("Bullish") && rr != null && rr >= 55 ? "RSI and MACD support the move" : macdBias.startsWith("Bearish") && rr != null && rr <= 45 ? "RSI and MACD support the downside" : "momentum is only partially aligned";
   const locationText = vp.position === "Above POC" ? "price is above the volume-profile POC" : vp.position === "Below POC" ? "price is below the volume-profile POC" : "volume-profile location is not decisive";
@@ -406,23 +388,13 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
       bias: emaBias,
       interpretation: emaInterpretation,
     },
-    momentum: {
-      rsi14: rr,
-      rsiBias,
-      macd: mm.line,
-      macdSignal: mm.signal,
-      macdHistogram: mm.histogram,
-      macdBias,
-      interpretation: `${rsiBias}; ${macdBias}.",
-    },
+    momentum: { rsi14: rr, rsiBias, macd: mm.line, macdSignal: mm.signal, macdHistogram: mm.histogram, macdBias, interpretation: `${rsiBias}; ${macdBias}.` },
     volatility: {
       atr14: atrValue,
       atrPercent: atrPct,
       breakoutAbove: nearestResistance?.high ?? nearestResistance?.price ?? null,
       breakdownBelow: nearestSupport?.low ?? nearestSupport?.price ?? null,
-      interpretation: atrValue == null
-        ? "ATR unavailable."
-        : `Current volatility is ${round(atrValue, 2)} (${round(atrPct ?? 0, 2)}% of price). Bullish breakout condition: close and hold above structural resistance with ATR-backed expansion. Bearish breakdown condition: close and hold below structural support with ATR-backed expansion.`,
+      interpretation: atrValue == null ? "ATR unavailable." : `Current volatility is ${round(atrValue, 2)} (${round(atrPct ?? 0, 2)}% of price). Bullish breakout condition: close and hold above structural resistance with ATR-backed expansion. Bearish breakdown condition: close and hold below structural support with ATR-backed expansion.`,
     },
     supportResistance: sr,
     fibonacci: fib,
