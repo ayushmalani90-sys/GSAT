@@ -6,3 +6,54 @@ body { margin: 0; background: #050b16 !important; color: #e8eef7 !important; fon
 button { cursor: pointer; }
 * { box-sizing: border-box; }
 ::selection { background: rgba(245, 158, 11, 0.28); color: #fff7d6; }
+
+/* Compact Bloomberg-style dashboard density */
+.gsat-app { max-width: 1600px !important; margin: 0 auto !important; padding: 20px !important; }
+.gsat-section { margin-top: 22px !important; }
+.gsat-section-heading { margin-bottom: 10px !important; }
+.gsat-section-heading h2 { margin: 3px 0 0 !important; }
+.gsat-card { border-radius: 18px !important; }
+.gsat-spot-grid, .gsat-chart-grid, .gsat-technical-columns { gap: 16px !important; }
+.gsat-spot-card { min-height: 170px !important; padding: 18px !important; }
+.gsat-spot-price { font-size: 34px !important; line-height: 1.05 !important; margin: 18px 0 !important; }
+.gsat-chart-card { padding: 12px !important; }
+.gsat-chart-frame { min-height: 610px !important; }
+.gsat-timeframe-wrap { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 18px !important; padding: 10px 14px !important; margin: 0 0 14px !important; border: 1px solid #203652 !important; border-radius: 14px !important; background: #07172b !important; }
+.gsat-timeframe-tabs { display: flex !important; gap: 8px !important; }
+.gsat-timeframe-tabs button { min-width: 54px !important; padding: 8px 12px !important; border-radius: 10px !important; border: 1px solid #29415e !important; background: #0a182b !important; color: #a8bad0 !important; font-weight: 700 !important; }
+.gsat-timeframe-tabs button.active { border-color: #c99a2e !important; color: #f2cf76 !important; background: #17180f !important; box-shadow: 0 0 0 1px rgba(201,154,46,.18) inset !important; }
+.gsat-technical-columns { align-items: start !important; }
+.gsat-tech-card { padding: 16px !important; }
+.gsat-analysis-section { margin-top: 14px !important; }
+.gsat-ema-grid { gap: 10px !important; }
+.gsat-ema-card { min-height: 104px !important; padding: 12px !important; }
+.gsat-ema-value { font-size: 26px !important; margin: 8px 0 4px !important; }
+.gsat-overall-card { padding: 16px !important; margin-top: 12px !important; }
+.gsat-overall-summary { margin: 8px 0 10px !important; line-height: 1.4 !important; }
+.gsat-overall-grid { gap: 8px !important; }
+.gsat-overall-grid > div { padding: 9px 10px !important; }
+.gsat-level-columns { gap: 10px !important; }
+.gsat-level-row { padding: 9px 12px !important; min-height: 62px !important; }
+.gsat-tech-supplement .gsat-analysis-section { margin-top: 12px !important; }
+.gsat-momentum-grid { gap: 10px !important; }
+.gsat-momentum-card { min-height: 112px !important; padding: 12px !important; }
+.gsat-momentum-value { font-size: 27px !important; margin: 8px 0 6px !important; }
+.gsat-subcard { padding: 12px !important; }
+.gsat-subcard-value { font-size: 24px !important; margin: 8px 0 !important; }
+.gsat-note { margin-top: 8px !important; padding: 9px 10px !important; line-height: 1.35 !important; }
+.gsat-inline-row { padding: 7px 0 !important; }
+.gsat-macro-grid { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 12px !important; }
+.gsat-macro-card { min-height: 150px !important; padding: 14px !important; }
+.gsat-macro-release { margin: 10px 0 !important; font-size: 15px !important; }
+.gsat-macro-values { display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)) !important; gap: 8px !important; }
+.gsat-macro-values > div { padding: 8px !important; border: 1px solid #203652 !important; border-radius: 10px !important; background: #07172b !important; }
+.gsat-macro-values span { display: block !important; font-size: 11px !important; color: #8fa5bd !important; margin-bottom: 3px !important; }
+.gsat-macro-values strong { font-size: 16px !important; }
+@media (max-width: 1100px) {
+  .gsat-macro-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+}
+@media (max-width: 900px) {
+  .gsat-app { padding: 12px !important; }
+  .gsat-timeframe-wrap { align-items: flex-start !important; flex-direction: column !important; }
+  .gsat-macro-grid { grid-template-columns: 1fr !important; }
+}
