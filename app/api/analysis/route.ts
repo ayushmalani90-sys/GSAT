@@ -12,52 +12,24 @@ type BiquoteBar = {
   isOpen?: boolean;
 };
 
-type BiquoteOhlcResponse = {
-  symbol?: string;
-  interval?: string;
-  bars?: BiquoteBar[];
-  message?: string;
-};
+type BiquoteOhlcResponse = { symbol?: string; interval?: string; bars?: BiquoteBar[]; message?: string };
+type BiquoteTick = { symbol?: string; mid?: number; bid?: number; ask?: number; dayDiffPercent?: number; timestamp?: string; stale?: boolean; marketState?: string; quoteAgeSeconds?: number };
 
-type BiquoteTick = {
-  symbol?: string;
-  mid?: number;
-  bid?: number;
-  ask?: number;
-  dayDiffPercent?: number;
-  timestamp?: string;
-  stale?: boolean;
-  marketState?: string;
-  quoteAgeSeconds?: number;
-};
-
-const TIMEFRAME_TO_BIQUOTE: Record<string, string> = {
-  "15m": "15m",
-  "1H": "1h",
-  "4H": "4h",
-  "1D": "1d",
-};
-
+const TIMEFRAME_TO_BIQUOTE: Record<string, string> = { "15m": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
 const MAX_CANDLES = 2000;
 
 async function fetchBiquoteCandles(symbol: "XAUUSD" | "XAGUSD", interval: string): Promise<TechnicalCandle[]> {
   const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
   url.searchParams.set("interval", interval);
   url.searchParams.set("limit", String(MAX_CANDLES));
-
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`BiQuote ${symbol} candles unavailable (${response.status})`);
   const data = (await response.json()) as BiquoteOhlcResponse;
   if (!Array.isArray(data.bars)) throw new Error(data.message ?? `BiQuote returned no ${symbol} OHLC bars`);
-
   return data.bars
     .filter((bar) => bar.isOpen !== true)
     .map((bar) => ({
-      t: String(bar.openTime ?? ""),
-      o: Number(bar.open),
-      h: Number(bar.high),
-      l: Number(bar.low),
-      c: Number(bar.close),
+      t: String(bar.openTime ?? ""), o: Number(bar.open), h: Number(bar.high), l: Number(bar.low), c: Number(bar.close),
       v: Number.isFinite(Number(bar.volume)) && Number(bar.volume) > 0 ? Number(bar.volume) : Number.isFinite(Number(bar.tickVolume)) ? Number(bar.tickVolume) : undefined,
     }))
     .filter((c) => Boolean(c.t) && Number.isFinite(c.o) && Number.isFinite(c.h) && Number.isFinite(c.l) && Number.isFinite(c.c))
@@ -73,46 +45,25 @@ async function fetchBiquoteTick(symbol: "XAUUSD" | "XAGUSD") {
 }
 
 export async function GET(request: Request) {
-  const timeframe = new URL(request.url).searchParams.get("timeframe") ?? "1H";
+  const params = new URL(request.url).searchParams;
+  const timeframe = params.get("timeframe") ?? "1H";
   const interval = TIMEFRAME_TO_BIQUOTE[timeframe];
-  if (!interval) {
-    return NextResponse.json(
-      { error: `Unsupported timeframe: ${timeframe}` },
-      { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } },
-    );
-  }
+  if (!interval) return NextResponse.json({ error: `Unsupported timeframe: ${timeframe}` }, { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } });
 
   try {
     const [goldCandles, silverCandles, goldTick, silverTick] = await Promise.all([
-      fetchBiquoteCandles("XAUUSD", interval),
-      fetchBiquoteCandles("XAGUSD", interval),
-      fetchBiquoteTick("XAUUSD"),
-      fetchBiquoteTick("XAGUSD"),
+      fetchBiquoteCandles("XAUUSD", interval), fetchBiquoteCandles("XAGUSD", interval), fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
     ]);
-
-    return NextResponse.json(
-      {
-        source: "BiQuote",
-        generatedAt: new Date().toISOString(),
-        timeframe,
-        interval,
-        feed: {
-          gold: { ...goldTick, price: goldTick.mid },
-          silver: { ...silverTick, price: silverTick.mid },
-        },
-        gold: { intraday: analyze(goldCandles) },
-        silver: { intraday: analyze(silverCandles) },
-        methodology: {
-          note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal. Support/resistance uses structural 5-bar swing highs/lows with ATR filtering, zone clustering, minimum separation, touch counts and strength scoring. Volume Profile uses BiQuote real/tick volume when supplied by the feed.",
-          dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price. Volume is therefore broker-feed volume, not centralized futures volume.",
-        },
+    return NextResponse.json({
+      source: "BiQuote", generatedAt: new Date().toISOString(), timeframe, interval,
+      feed: { gold: { ...goldTick, price: goldTick.mid }, silver: { ...silverTick, price: silverTick.mid } },
+      gold: { intraday: analyze(goldCandles) }, silver: { intraday: analyze(silverCandles) },
+      methodology: {
+        note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices, RSI uses Wilder RMA, MACD uses EMA 12/26 with EMA 9 signal. Support/resistance uses structural 5-bar swing highs/lows with ATR filtering, zone clustering, minimum separation, touch counts and strength scoring. Volume Profile uses BiQuote real/tick volume when supplied by the feed.",
+        dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference price. Volume is broker-feed volume, not centralized futures volume.",
       },
-      { headers: { "Cache-Control": "no-store, max-age=0" } },
-    );
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "BiQuote technical analysis unavailable" },
-      { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "BiQuote technical analysis unavailable" }, { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 }
