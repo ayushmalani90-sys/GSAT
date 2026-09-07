@@ -1,23 +1,6 @@
 import { NextResponse } from "next/server";
 import { analyze, type TechnicalCandle } from "../../../lib/technical";
-
-type BiquoteBar = {
-  openTime?: string;
-  open?: number;
-  high?: number;
-  low?: number;
-  close?: number;
-  volume?: number;
-  tickVolume?: number;
-  isOpen?: boolean;
-};
-
-type BiquoteOhlcResponse = {
-  symbol?: string;
-  interval?: string;
-  bars?: BiquoteBar[];
-  message?: string;
-};
+import { fetchOandaCandles } from "../../../lib/oanda";
 
 type BiquoteTick = {
   symbol?: string;
@@ -31,41 +14,20 @@ type BiquoteTick = {
   quoteAgeSeconds?: number;
 };
 
-const TIMEFRAME_TO_BIQUOTE: Record<string, string> = {
-  "15m": "15m",
-  "1H": "1h",
-  "4H": "4h",
-  "1D": "1d",
-};
+const TIMEFRAMES = ["15m", "1H", "4H", "1D"] as const;
+type Timeframe = (typeof TIMEFRAMES)[number];
 
-const MAX_CANDLES = 2000;
-
-async function fetchBiquoteCandles(symbol: "XAUUSD" | "XAGUSD", interval: string): Promise<TechnicalCandle[]> {
-  const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
-  url.searchParams.set("interval", interval);
-  url.searchParams.set("limit", String(MAX_CANDLES));
-
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`BiQuote ${symbol} candles unavailable (${response.status})`);
-  const data = (await response.json()) as BiquoteOhlcResponse;
-  if (!Array.isArray(data.bars)) throw new Error(data.message ?? `BiQuote returned no ${symbol} OHLC bars`);
-
-  return data.bars
-    .filter((bar) => bar.isOpen !== true)
-    .map((bar) => ({
-      t: String(bar.openTime ?? ""),
-      o: Number(bar.open),
-      h: Number(bar.high),
-      l: Number(bar.low),
-      c: Number(bar.close),
-      v: Number.isFinite(Number(bar.volume)) && Number(bar.volume) > 0
-        ? Number(bar.volume)
-        : Number.isFinite(Number(bar.tickVolume)) && Number(bar.tickVolume) > 0
-          ? Number(bar.tickVolume)
-          : undefined,
+function oandaToTechnicalCandles(candles: Awaited<ReturnType<typeof fetchOandaCandles>>): TechnicalCandle[] {
+  return candles
+    .filter((c) => c.complete && c.mid)
+    .map((c) => ({
+      t: c.time,
+      o: Number(c.mid?.o),
+      h: Number(c.mid?.h),
+      l: Number(c.mid?.l),
+      c: Number(c.mid?.c),
     }))
-    .filter((c) => Boolean(c.t) && Number.isFinite(c.o) && Number.isFinite(c.h) && Number.isFinite(c.l) && Number.isFinite(c.c))
-    .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+    .filter((c) => Boolean(c.t) && [c.o, c.h, c.l, c.c].every(Number.isFinite));
 }
 
 async function fetchBiquoteTick(symbol: "XAUUSD" | "XAGUSD") {
@@ -77,9 +39,8 @@ async function fetchBiquoteTick(symbol: "XAUUSD" | "XAGUSD") {
 }
 
 export async function GET(request: Request) {
-  const timeframe = new URL(request.url).searchParams.get("timeframe") ?? "1H";
-  const interval = TIMEFRAME_TO_BIQUOTE[timeframe];
-  if (!interval) {
+  const timeframe = (new URL(request.url).searchParams.get("timeframe") ?? "1H") as Timeframe;
+  if (!TIMEFRAMES.includes(timeframe)) {
     return NextResponse.json(
       { error: `Unsupported timeframe: ${timeframe}` },
       { status: 400, headers: { "Cache-Control": "no-store, max-age=0" } },
@@ -87,35 +48,38 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [goldCandles, silverCandles, goldTick, silverTick] = await Promise.all([
-      fetchBiquoteCandles("XAUUSD", interval),
-      fetchBiquoteCandles("XAGUSD", interval),
+    const [goldOanda, silverOanda, goldTick, silverTick] = await Promise.all([
+      fetchOandaCandles("XAUUSD", timeframe, 2000),
+      fetchOandaCandles("XAGUSD", timeframe, 2000),
       fetchBiquoteTick("XAUUSD"),
       fetchBiquoteTick("XAGUSD"),
     ]);
 
+    const goldCandles = oandaToTechnicalCandles(goldOanda);
+    const silverCandles = oandaToTechnicalCandles(silverOanda);
+
     return NextResponse.json(
       {
-        source: "BiQuote",
+        source: "OANDA",
         generatedAt: new Date().toISOString(),
         timeframe,
-        interval,
+        interval: timeframe,
         feed: {
-          gold: { ...goldTick, price: goldTick.mid },
-          silver: { ...silverTick, price: silverTick.mid },
+          gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" },
+          silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" },
         },
         gold: { intraday: analyze(goldCandles) },
         silver: { intraday: analyze(silverCandles) },
         methodology: {
-          note: "Technical indicators use completed BiQuote OHLC candles for the selected timeframe. EMA uses close prices; RSI and ATR use Wilder RMA; MACD uses EMA 12/26 with EMA 9 signal; structural support/resistance and Fibonacci use confirmed swing pivots; volume profile uses available BiQuote broker/tick volume as a documented proxy.",
-          dataQuality: "BiQuote is a MetaTrader 5 broker CFD feed. It provides mid/bid/ask pricing and broker/tick-volume information rather than consolidated exchange last-trade data, so GSAT treats the BiQuote mid as the spot reference and labels volume-profile output as a broker-feed estimate.",
+          note: "Technical indicators use completed OANDA midpoint OHLC candles for the selected timeframe. BiQuote is used only for the live spot quote. EMA uses close prices; RSI and ATR use Wilder RMA; MACD uses EMA 12/26 with EMA 9 signal.",
+          dataQuality: "Technical analysis and chart data are aligned to OANDA midpoint candles; live spot remains sourced from BiQuote as requested.",
         },
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "BiQuote technical analysis unavailable" },
+      { error: error instanceof Error ? error.message : "OANDA technical analysis unavailable" },
       { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   }
