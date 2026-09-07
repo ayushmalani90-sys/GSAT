@@ -1,10 +1,4 @@
-export type TechnicalCandle = {
-  t: string;
-  o: number;
-  h: number;
-  l: number;
-  c: number;
-};
+export type TechnicalCandle = { t: string; o: number; h: number; l: number; c: number; volume?: number; tickVolume?: number };
 
 export type IndicatorSeries = {
   ema20: number | null;
@@ -17,12 +11,16 @@ export type IndicatorSeries = {
   atr14: number | null;
 };
 
-const smaSeed = (values: number[], period: number) =>
-  values.length < period ? null : values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+function valid(v: number): boolean { return Number.isFinite(v); }
+
+function sma(values: number[], period: number): number | null {
+  if (!Number.isInteger(period) || period <= 0 || values.length < period) return null;
+  return values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+}
 
 export function ema(values: number[], period: number): number | null {
   if (!Number.isInteger(period) || period <= 0 || values.length < period) return null;
-  let current = smaSeed(values, period);
+  let current = sma(values, period);
   if (current == null) return null;
   const alpha = 2 / (period + 1);
   for (let i = period; i < values.length; i += 1) current = alpha * values[i] + (1 - alpha) * current;
@@ -31,7 +29,7 @@ export function ema(values: number[], period: number): number | null {
 
 export function rma(values: number[], period: number): number | null {
   if (!Number.isInteger(period) || period <= 0 || values.length < period) return null;
-  let current = smaSeed(values, period);
+  let current = sma(values, period);
   if (current == null) return null;
   for (let i = period; i < values.length; i += 1) current = ((period - 1) * current + values[i]) / period;
   return current;
@@ -50,61 +48,61 @@ export function rsi(values: number[], period = 14): number | null {
   const avgLoss = rma(losses, period);
   if (avgGain == null || avgLoss == null) return null;
   if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
+  if (avgGain === 0) return 0;
   return 100 - 100 / (1 + avgGain / avgLoss);
+}
+
+function emaSeries(values: number[], period: number): Array<number | null> {
+  const out: Array<number | null> = Array(values.length).fill(null);
+  if (values.length < period) return out;
+  let current = sma(values, period);
+  if (current == null) return out;
+  out[period - 1] = current;
+  const alpha = 2 / (period + 1);
+  for (let i = period; i < values.length; i += 1) {
+    current = alpha * values[i] + (1 - alpha) * current;
+    out[i] = current;
+  }
+  return out;
 }
 
 export function macd(values: number[], fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   if (values.length < slowPeriod) return { line: null, signal: null, histogram: null };
-
-  const alphaFast = 2 / (fastPeriod + 1);
-  const alphaSlow = 2 / (slowPeriod + 1);
-  let fast = smaSeed(values, fastPeriod);
-  let slow = smaSeed(values, slowPeriod);
-  if (fast == null || slow == null) return { line: null, signal: null, histogram: null };
-
-  for (let i = fastPeriod; i < slowPeriod; i += 1) fast = alphaFast * values[i] + (1 - alphaFast) * fast;
-
-  const lineSeries: number[] = [fast - slow];
-  for (let i = slowPeriod; i < values.length; i += 1) {
-    fast = alphaFast * values[i] + (1 - alphaFast) * fast;
-    slow = alphaSlow * values[i] + (1 - alphaSlow) * slow;
-    lineSeries.push(fast - slow);
+  const fastSeries = emaSeries(values, fastPeriod);
+  const slowSeries = emaSeries(values, slowPeriod);
+  const lineSeries: number[] = [];
+  const lineIndexes: number[] = [];
+  for (let i = 0; i < values.length; i += 1) {
+    const fast = fastSeries[i];
+    const slow = slowSeries[i];
+    if (fast != null && slow != null) {
+      lineSeries.push(fast - slow);
+      lineIndexes.push(i);
+    }
   }
-
+  if (lineSeries.length < signalPeriod) return { line: lineSeries.at(-1) ?? null, signal: null, histogram: null };
   const signal = ema(lineSeries, signalPeriod);
   const line = lineSeries.at(-1) ?? null;
-  return {
-    line,
-    signal,
-    histogram: line != null && signal != null ? line - signal : null,
-  };
+  return { line, signal, histogram: line != null && signal != null ? line - signal : null };
 }
 
 export function trueRanges(candles: TechnicalCandle[]): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < candles.length; i += 1) {
-    const current = candles[i];
-    const previous = candles[i - 1];
-    result.push(
-      previous == null
-        ? current.h - current.l
-        : Math.max(
-            current.h - current.l,
-            Math.abs(current.h - previous.c),
-            Math.abs(current.l - previous.c),
-          ),
-    );
-  }
-  return result;
+  const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+  return sorted.map((current, i) => {
+    const previous = sorted[i - 1];
+    if (!previous) return current.h - current.l;
+    return Math.max(current.h - current.l, Math.abs(current.h - previous.c), Math.abs(current.l - previous.c));
+  }).filter(valid);
 }
 
 export function atr(candles: TechnicalCandle[], period = 14): number | null {
-  if (candles.length <= period) return null;
-  return rma(trueRanges(candles), period);
+  const tr = trueRanges(candles);
+  return rma(tr, period);
 }
 
 export function calculateIndicators(candles: TechnicalCandle[]): IndicatorSeries {
-  const closes = candles.map((c) => c.c);
+  const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+  const closes = sorted.map((c) => c.c).filter(valid);
   const m = macd(closes, 12, 26, 9);
   return {
     ema20: ema(closes, 20),
@@ -114,6 +112,6 @@ export function calculateIndicators(candles: TechnicalCandle[]): IndicatorSeries
     macd: m.line,
     macdSignal: m.signal,
     macdHistogram: m.histogram,
-    atr14: atr(candles, 14),
+    atr14: atr(sorted, 14),
   };
 }
