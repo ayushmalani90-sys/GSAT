@@ -11,5 +11,14 @@ export async function GET() {
       hour12: true,
     }),
   }));
-  return NextResponse.json({ source: "GSAT macro schedule", timezone: "Asia/Kolkata", events, generatedAt: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
+
+  return NextResponse.json(
+    {
+      source: "GSAT macro schedule",
+      timezone: "Asia/Kolkata",
+      events,
+      generatedAt: new Date().toISOString(),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
