@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUpcomingMacroEvents } from "@/lib/macro-calendar";
+import { getUpcomingMacroEvents } from "../../../lib/macro-calendar";
 
 export async function GET() {
   const events = getUpcomingMacroEvents(new Date()).map((event) => ({
