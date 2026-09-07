@@ -13,11 +13,14 @@ button { cursor: pointer; }
 .gsat-section-heading { margin-bottom: 10px !important; }
 .gsat-section-heading h2 { margin: 3px 0 0 !important; }
 .gsat-card { border-radius: 18px !important; }
-.gsat-spot-grid, .gsat-chart-grid, .gsat-technical-columns { gap: 16px !important; }
+.gsat-spot-grid, .gsat-chart-grid, .gsat-technical-columns { display: grid !important; gap: 16px !important; align-items: stretch !important; }
+.gsat-spot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.gsat-chart-grid, .gsat-technical-columns { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 .gsat-spot-card { min-height: 170px !important; padding: 18px !important; }
 .gsat-spot-price { font-size: 34px !important; line-height: 1.05 !important; margin: 18px 0 !important; }
-.gsat-chart-card { padding: 12px !important; }
-.gsat-chart-frame { min-height: 610px !important; }
+.gsat-chart-card { padding: 12px !important; min-width: 0 !important; }
+.gsat-chart-grid .gsat-chart-card { width: 100% !important; }
+.gsat-chart-frame { min-height: 610px !important; width: 100% !important; }
 .gsat-timeframe-wrap { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 18px !important; padding: 10px 14px !important; margin: 0 0 14px !important; border: 1px solid #203652 !important; border-radius: 14px !important; background: #07172b !important; }
 .gsat-timeframe-tabs { display: flex !important; gap: 8px !important; }
 .gsat-timeframe-tabs button { min-width: 54px !important; padding: 8px 12px !important; border-radius: 10px !important; border: 1px solid #29415e !important; background: #0a182b !important; color: #a8bad0 !important; font-weight: 700 !important; }
@@ -50,10 +53,13 @@ button { cursor: pointer; }
 .gsat-macro-values span { display: block !important; font-size: 11px !important; color: #8fa5bd !important; margin-bottom: 3px !important; }
 .gsat-macro-values strong { font-size: 16px !important; }
 @media (max-width: 1100px) {
+  .gsat-spot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .gsat-chart-grid, .gsat-technical-columns { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .gsat-macro-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
 }
 @media (max-width: 900px) {
   .gsat-app { padding: 12px !important; }
+  .gsat-spot-grid, .gsat-chart-grid, .gsat-technical-columns { grid-template-columns: 1fr !important; }
   .gsat-timeframe-wrap { align-items: flex-start !important; flex-direction: column !important; }
   .gsat-macro-grid { grid-template-columns: 1fr !important; }
 }
