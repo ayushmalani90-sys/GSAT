@@ -67,8 +67,17 @@ function emaSeries(values: number[], period: number): Array<number | null> {
 }
 
 export function macd(values: number[], fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
-  if (values.length < slowPeriod) return { line: null, signal: null, histogram: null };
+  if (!Number.isInteger(fastPeriod) || !Number.isInteger(slowPeriod) || !Number.isInteger(signalPeriod)) {
+    return { line: null, signal: null, histogram: null };
+  }
+  if (fastPeriod <= 0 || slowPeriod <= 0 || signalPeriod <= 0 || fastPeriod >= slowPeriod || values.length < slowPeriod + signalPeriod - 1) {
+    return { line: null, signal: null, histogram: null };
+  }
 
+  // MACD must be calculated from one continuous, chronologically sorted close series.
+  // EMA12 and EMA26 are both seeded from the same historical window, then the MACD
+  // line is built for every bar where both EMAs exist. The signal EMA9 is seeded from
+  // the first 9 complete MACD values and recursively updated through the latest bar.
   const fastSeries = emaSeries(values, fastPeriod);
   const slowSeries = emaSeries(values, slowPeriod);
   const lineSeries: number[] = [];
@@ -79,13 +88,22 @@ export function macd(values: number[], fastPeriod = 12, slowPeriod = 26, signalP
     if (fast != null && slow != null) lineSeries.push(fast - slow);
   }
 
-  if (!lineSeries.length) return { line: null, signal: null, histogram: null };
+  if (lineSeries.length < signalPeriod) return { line: null, signal: null, histogram: null };
 
-  // The signal EMA must be seeded from the first complete MACD line value
-  // and then recursively updated across the full MACD series.
-  const signal = ema(lineSeries, signalPeriod);
-  const line = lineSeries.at(-1) ?? null;
-  return { line, signal, histogram: line != null && signal != null ? line - signal : null };
+  let signal = sma(lineSeries, signalPeriod);
+  if (signal == null) return { line: null, signal: null, histogram: null };
+
+  const alpha = 2 / (signalPeriod + 1);
+  for (let i = signalPeriod; i < lineSeries.length; i += 1) {
+    signal = alpha * lineSeries[i] + (1 - alpha) * signal;
+  }
+
+  const line = lineSeries[lineSeries.length - 1] ?? null;
+  return {
+    line,
+    signal,
+    histogram: line != null && signal != null ? line - signal : null,
+  };
 }
 
 export function trueRanges(candles: TechnicalCandle[]): number[] {
