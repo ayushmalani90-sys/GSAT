@@ -31,7 +31,13 @@ async function fetchCandles(symbol: (typeof SYMBOLS)[number], timeframe: string)
   if (!Array.isArray(data.bars)) throw new Error(`BiQuote returned no ${symbol} bars`);
   return data.bars
     .filter((bar) => bar.isOpen !== true)
-    .map((bar) => ({ t: String(bar.openTime ?? ""), o: Number(bar.open), h: Number(bar.high), l: Number(bar.low), c: Number(bar.close) }))
+    .map((bar) => ({
+      t: String(bar.openTime ?? ""),
+      o: Number(bar.open),
+      h: Number(bar.high),
+      l: Number(bar.low),
+      c: Number(bar.close),
+    }))
     .filter((c) => Boolean(c.t) && [c.o, c.h, c.l, c.c].every(Number.isFinite))
     .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
 }
