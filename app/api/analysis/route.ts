@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { analyze, type TechnicalCandle } from "../../../lib/technical";
 import { aggregate1mCandles, normalizeMasterCandles, type MasterCandle } from "../../../lib/market-data/master-ohlc";
+import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
 
 type BiquoteTick = { symbol?: string; mid?: number; bid?: number; ask?: number; dayDiffPercent?: number; timestamp?: string; stale?: boolean; marketState?: string; quoteAgeSeconds?: number };
 type CandleResponse = { bars?: Array<Record<string, unknown>>; message?: string };
@@ -19,7 +20,6 @@ async function fetchMaster1mCandles(symbol: SymbolCode): Promise<MasterCandle[]>
   if (!Array.isArray(data.bars)) throw new Error(data.message ?? `BiQuote returned no ${symbol} 1m candles`);
   return normalizeMasterCandles(data.bars, symbol);
 }
-
 async function fetchDirectCandles(symbol: SymbolCode, timeframe: Timeframe): Promise<TechnicalCandle[]> {
   const interval = TF_AGGREGATION[timeframe];
   const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
@@ -30,7 +30,6 @@ async function fetchDirectCandles(symbol: SymbolCode, timeframe: Timeframe): Pro
   if (!Array.isArray(data.bars)) throw new Error(data.message ?? `BiQuote returned no ${symbol} ${interval} candles`);
   return normalizeMasterCandles(data.bars, symbol).map(({ symbol: _s, ...c }) => c);
 }
-
 async function fetchBiquoteTick(symbol: SymbolCode) {
   const response = await fetch(`https://biquote.io/api/${symbol}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`BiQuote ${symbol} quote unavailable (${response.status})`);
@@ -38,7 +37,6 @@ async function fetchBiquoteTick(symbol: SymbolCode) {
   if (!Number.isFinite(data.mid)) throw new Error(`BiQuote returned an invalid ${symbol} mid price`);
   return data;
 }
-
 function aggregate(candles: MasterCandle[], timeframe: Timeframe): TechnicalCandle[] {
   return aggregate1mCandles(candles, TF_AGGREGATION[timeframe]).map(({ symbol: _s, sourceInterval: _i, ...c }) => c);
 }
@@ -52,28 +50,22 @@ export async function GET(request: Request) {
     const [gold1m, silver1m, goldTick, silverTick] = await Promise.all([
       fetchMaster1mCandles("XAUUSD"), fetchMaster1mCandles("XAGUSD"), fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
     ]);
-
-    let goldCandles = aggregate(gold1m, timeframe);
-    let silverCandles = aggregate(silver1m, timeframe);
-    let goldSource = "master-1m-derived";
-    let silverSource = "master-1m-derived";
-
-    if (goldCandles.length < 400) {
-      goldCandles = await fetchDirectCandles("XAUUSD", timeframe);
-      goldSource = "native-timeframe-fallback";
-    }
-    if (silverCandles.length < 400) {
-      silverCandles = await fetchDirectCandles("XAGUSD", timeframe);
-      silverSource = "native-timeframe-fallback";
-    }
-
+    const goldDerived = aggregate(gold1m, timeframe);
+    const silverDerived = aggregate(silver1m, timeframe);
+    const useMaster = goldDerived.length >= 400 && silverDerived.length >= 400;
+    const [goldCandles, silverCandles] = useMaster
+      ? [goldDerived, silverDerived]
+      : await Promise.all([fetchDirectCandles("XAUUSD", timeframe), fetchDirectCandles("XAGUSD", timeframe)]);
     const gold = analyze(goldCandles), silver = analyze(silverCandles);
+    const sourceMode = useMaster ? "master-1m-derived" : "biquote-native-timeframe-fallback";
     return NextResponse.json({
-      source: "BiQuote", dataArchitecture: { gold: goldSource, silver: silverSource }, generatedAt: new Date().toISOString(), timeframe, masterInterval: "1m",
+      source: ANALYSIS_SOURCE_POLICY.liveQuotes,
+      dataArchitecture: sourceMode,
+      generatedAt: new Date().toISOString(), timeframe, masterInterval: "1m",
       feed: { gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" }, silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" } },
-      history: { gold1mSamples: gold1m.length, silver1mSamples: silver1m.length, goldAnalysisSamples: goldCandles.length, silverAnalysisSamples: silverCandles.length },
+      history: { gold1mSamples: gold1m.length, silver1mSamples: silver1m.length, goldDerivedSamples: goldDerived.length, silverDerivedSamples: silverDerived.length, goldAnalysisSamples: goldCandles.length, silverAnalysisSamples: silverCandles.length },
       gold: { intraday: gold }, silver: { intraday: silver },
-      methodology: { note: "GSAT prefers one normalized BiQuote 1-minute master series and derives higher timeframes from it. When the upstream 1m window is too short to support long-period indicators, the provider's completed native timeframe history is used as an explicit fallback so technical cards remain populated.", indicators: "EMA 20/50/200 use close prices; RSI 14 and ATR 14 use Wilder RMA; MACD uses EMA 12/26 with EMA 9 signal.", dataQuality: "Open candles are excluded. Native timeframe fallback is explicitly reported and is not claimed to be equivalent to a deeper master 1m database.", display: "TradingView OANDA widgets are display-only. No OANDA API is used." },
+      methodology: { note: analysisSourceNote(), indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.", dataQuality: "Open candles are excluded. Higher timeframes are derived from normalized BiQuote 1m data when sufficient history is available; otherwise BiQuote's own completed timeframe candles are used and the source mode is reported.", display: "TradingView OANDA widgets remain display-only. No OANDA API is used." },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "BiQuote analysis unavailable" }, { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } });
