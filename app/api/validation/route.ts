@@ -20,7 +20,7 @@ const MAX_CANDLES = 2000;
 const INTERVALS: Record<string, string> = { "15m": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
 const SYMBOLS = ["XAUUSD", "XAGUSD"] as const;
 
-aasync function fetchCandles(symbol: (typeof SYMBOLS)[number], timeframe: string): Promise<TechnicalCandle[]> {
+async function fetchCandles(symbol: (typeof SYMBOLS)[number], timeframe: string): Promise<TechnicalCandle[]> {
   const interval = INTERVALS[timeframe];
   const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
   url.searchParams.set("interval", interval);
