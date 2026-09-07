@@ -93,12 +93,17 @@ export function validateMasterCandleSequence(candles: MasterCandle[]): { valid: 
 }
 
 export function completeness(candles: MasterCandle[], intervalMinutes = 1) {
-  if (candles.length < 2) return { expectedMinutes: 0, observedMinutes: 0, coveragePct: candles.length ? 100 : 0 };
+  if (candles.length < 2) return { expectedMinutes: 0, observedMinutes: 0, missingIntervals: 0, coveragePct: candles.length ? 100 : 0 };
   const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
   const start = Date.parse(sorted[0].t);
   const end = Date.parse(sorted.at(-1)!.t);
   const expected = Math.floor((end - start) / (intervalMinutes * 60 * 1000)) + 1;
-  return { expectedMinutes: expected, observedMinutes: sorted.length, coveragePct: expected ? Math.min(100, sorted.length / expected * 100) : 0 };
+  return {
+    expectedMinutes: expected,
+    observedMinutes: sorted.length,
+    missingIntervals: Math.max(0, expected - sorted.length),
+    coveragePct: expected ? Math.min(100, sorted.length / expected * 100) : 0,
+  };
 }
 
 export function toTechnicalCandles(candles: MasterCandle[]): Array<{ t: string; o: number; h: number; l: number; c: number; volume?: number; tickVolume?: number }> {
