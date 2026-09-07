@@ -23,7 +23,7 @@ export function ema(values: number[], period: number): number | null {
   return current;
 }
 
-function rma(values: number[], period: number): number | null {
+export function rma(values: number[], period: number): number | null {
   if (values.length < period) return null;
   let current = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = period; i < values.length; i += 1) current = (current * (period - 1) + values[i]) / period;
@@ -42,7 +42,7 @@ export function rsi(values: number[], period = 14): number | null {
   const avgGain = rma(gains, period);
   const avgLoss = rma(losses, period);
   if (avgGain == null || avgLoss == null) return null;
-  if (avgLoss === 0) return 100;
+  if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
   if (avgGain === 0) return 0;
   return 100 - 100 / (1 + avgGain / avgLoss);
 }
@@ -183,22 +183,37 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const bullish = [e20, e50, e200].filter(e => price != null && e != null && price > e).length;
   const bearish = [e20, e50, e200].filter(e => price != null && e != null && price < e).length;
   const emaBias = bullish >= 2 ? "Bullish EMA structure" : bearish >= 2 ? "Bearish EMA structure" : "Mixed EMA structure";
-  const emaInterpretation = emaBias.startsWith("Bullish") ? "Price is above most available EMAs, favoring upside structure." : emaBias.startsWith("Bearish") ? "Price is below most available EMAs, favoring downside structure." : "Price is mixed around the available EMAs.";
-  const rr = rsi(closes, 14), mm = macd(closes), atrValue = atr(sorted, 14);
-  const atrPct = atrValue != null && price ? (atrValue / price) * 100 : null;
-  const rsiBias = rr == null ? "Unavailable" : rr >= 70 ? "Overbought" : rr <= 30 ? "Oversold" : rr >= 55 ? "Bullish momentum" : rr <= 45 ? "Bearish momentum" : "Neutral momentum";
-  const macdBias = mm.line == null || mm.signal == null ? "Unavailable" : mm.line > mm.signal ? "Bullish MACD" : mm.line < mm.signal ? "Bearish MACD" : "Neutral MACD";
-  const sr = price == null ? { supports: [], resistances: [], method: "No candle series available." } : supportResistance(sorted, price, atrValue);
-  const fib = price == null ? { swingLow: null, swingHigh: null, levels: [], interpretation: "No price available." } : fibonacci(sorted, price);
+  const emaInterpretation = price == null ? "Price unavailable." : `${emaBias}. Price is ${relation(e20).toLowerCase()} EMA20, ${relation(e50).toLowerCase()} EMA50 and ${relation(e200).toLowerCase()} EMA200.`;
+  const rsi14 = rsi(closes, 14);
+  const macdValues = macd(closes);
+  const rsiBias = rsi14 == null ? "Unavailable" : rsi14 >= 70 ? "Overbought" : rsi14 <= 30 ? "Oversold" : rsi14 >= 50 ? "Bullish momentum" : "Bearish momentum";
+  const macdBias = macdValues.histogram == null ? "Unavailable" : macdValues.histogram > 0 ? "Bullish MACD momentum" : macdValues.histogram < 0 ? "Bearish MACD momentum" : "Neutral MACD momentum";
+  const momentumInterpretation = `RSI14 is ${rsi14 == null ? "unavailable" : round(rsi14, 2)}; ${macdBias.toLowerCase()}.`;
+  const atr14 = atr(sorted, 14);
+  const atrPercent = atr14 != null && price ? atr14 / price * 100 : null;
+  const volatilityInterpretation = atr14 == null ? "ATR unavailable." : `ATR14 is ${round(atr14, 2)} (${round(atrPercent ?? 0, 2)}% of price).`;
+  const sr = supportResistance(sorted, price ?? 0, atr14);
+  const fib = fibonacci(sorted, price ?? 0);
   const vp = volumeProfile(sorted);
-  const patterns = price == null ? [] : detectPatterns(sorted, price);
-  const emaScore = emaBias.startsWith("Bullish") ? 2 : emaBias.startsWith("Bearish") ? -2 : 0;
-  const rsiScore = rr == null ? 0 : rr >= 55 && rr < 70 ? 1 : rr > 30 && rr <= 45 ? -1 : 0;
-  const macdScore = macdBias.startsWith("Bullish") ? 1 : macdBias.startsWith("Bearish") ? -1 : 0;
-  const patternScore = patterns.reduce((s, p) => s + (p.direction === "Bullish" ? (p.confidence >= 75 ? 2 : 1) : p.direction === "Bearish" ? (p.confidence >= 75 ? -2 : -1) : 0), 0);
-  const total = emaScore + rsiScore + macdScore + Math.max(-2, Math.min(2, patternScore));
-  const overallBias = total >= 3 ? "Bullish" : total <= -3 ? "Bearish" : "Neutral / Mixed";
-  const momentumText = macdBias.startsWith("Bullish") && rr != null && rr >= 55 ? "Momentum confirms the trend." : macdBias.startsWith("Bearish") && rr != null && rr <= 45 ? "Momentum confirms the downside trend." : "Momentum is not fully aligned with the trend.";
-  const summary = overallBias === "Bullish" ? `${emaBias}. ${momentumText}` : overallBias === "Bearish" ? `${emaBias}. ${momentumText}` : `${emaBias}. ${momentumText} Wait for confirmation at structure.`;
-  return { price, samples: closes.length, ema: { ema20: e20, ema50: e50, ema200: e200, priceVsEma20: relation(e20), priceVsEma50: relation(e50), priceVsEma200: relation(e200), bias: emaBias, interpretation: emaInterpretation }, momentum: { rsi14: rr, rsiBias, macd: mm.line, macdSignal: mm.signal, macdHistogram: mm.histogram, macdBias, interpretation: `${rsiBias}; ${macdBias}.` }, volatility: { atr14: atrValue, atrPercent: atrPct, interpretation: atrValue == null ? "ATR unavailable." : `Average true range is ${round(atrValue, 2)} (${round(atrPct ?? 0, 2)}% of price).` }, supportResistance: sr, fibonacci: fib, volumeProfile: vp, patterns, overall: { bias: overallBias, summary } };
+  const patterns = detectPatterns(sorted, price ?? 0);
+  const votes = [
+    bullish > bearish ? 1 : bullish < bearish ? -1 : 0,
+    rsi14 == null ? 0 : rsi14 >= 50 ? 1 : -1,
+    macdValues.histogram == null ? 0 : macdValues.histogram >= 0 ? 1 : -1,
+  ];
+  const voteSum = votes.reduce((a, b) => a + b, 0) + patterns.reduce((s, p) => s + (p.direction === "Bullish" ? 1 : p.direction === "Bearish" ? -1 : 0), 0);
+  const overallBias = voteSum >= 2 ? "Bullish" : voteSum <= -2 ? "Bearish" : "Mixed";
+  const overallSummary = `${overallBias} technical posture from EMA structure, RSI, MACD and detected patterns; ATR is used as a volatility regime measure.`;
+  return {
+    price,
+    samples: sorted.length,
+    ema: { ema20: e20 == null ? null : round(e20, 4), ema50: e50 == null ? null : round(e50, 4), ema200: e200 == null ? null : round(e200, 4), priceVsEma20: relation(e20), priceVsEma50: relation(e50), priceVsEma200: relation(e200), bias: emaBias, interpretation: emaInterpretation },
+    momentum: { rsi14: rsi14 == null ? null : round(rsi14, 4), rsiBias, macd: macdValues.line == null ? null : round(macdValues.line, 4), macdSignal: macdValues.signal == null ? null : round(macdValues.signal, 4), macdHistogram: macdValues.histogram == null ? null : round(macdValues.histogram, 4), macdBias, interpretation: momentumInterpretation },
+    volatility: { atr14: atr14 == null ? null : round(atr14, 4), atrPercent: atrPercent == null ? null : round(atrPercent, 4), interpretation: volatilityInterpretation },
+    supportResistance: sr,
+    fibonacci: fib,
+    volumeProfile: vp,
+    patterns,
+    overall: { bias: overallBias, summary: overallSummary },
+  };
 }
