@@ -9,10 +9,7 @@ export type BiquoteHistoryDiagnostics = {
   firstTimestamp: string | null;
   lastTimestamp: string | null;
   duplicatesRemoved: number;
-  gaps: number;
-  invalid: number;
-  openCandlesRemoved: number;
-  paginationMode: string;
+  paginationMode: "provider-cursor" | "single-page-or-provider-limited";
 };
 
 export type BiquoteHistoryResult<T> = {
@@ -29,12 +26,12 @@ function asBars(data: unknown): BiquoteHistoryBar[] {
   return [];
 }
 
-function pageHint(data: unknown): string | null {
+function nextCursor(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
-  const x = data as Record<string, unknown>;
-  for (const key of ["next", "nextCursor", "nextPage", "cursor", "next_cursor"]) {
-    const value = x[key];
-    if (typeof value === "string" && value) return value;
+  const candidate = data as Record<string, unknown>;
+  for (const key of ["nextCursor", "next_cursor"]) {
+    const value = candidate[key];
+    if (typeof value === "string" && value.length > 0) return value;
   }
   return null;
 }
@@ -45,15 +42,15 @@ export async function fetchBiquoteHistory<T extends BiquoteHistoryBar>(
   requestedLimit: number,
   normalize: (bars: BiquoteHistoryBar[]) => T[],
 ): Promise<BiquoteHistoryResult<T>> {
+  const target = Math.max(1, requestedLimit);
   const all: BiquoteHistoryBar[] = [];
-  const seenPageKeys = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
   let pagesRequested = 0;
   let pagesSucceeded = 0;
-  let cursor: string | null = null;
-  const target = Math.max(1, requestedLimit);
-  const maxPages = 20;
+  let paginationMode: BiquoteHistoryDiagnostics["paginationMode"] = "single-page-or-provider-limited";
 
-  for (let page = 0; page < maxPages && all.length < target; page += 1) {
+  for (let page = 0; page < 20 && all.length < target; page += 1) {
     const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
     url.searchParams.set("interval", interval);
     url.searchParams.set("limit", String(Math.min(2000, target - all.length)));
@@ -69,11 +66,11 @@ export async function fetchBiquoteHistory<T extends BiquoteHistoryBar>(
     const bars = asBars(data);
     if (!bars.length) break;
     all.push(...bars);
-
-    const next = pageHint(data);
-    if (!next || next === cursor || seenPageKeys.has(next)) break;
-    seenPageKeys.add(next);
+    const next = nextCursor(data);
+    if (!next || seenCursors.has(next)) break;
+    seenCursors.add(next);
     cursor = next;
+    paginationMode = "provider-cursor";
   }
 
   const normalized = normalize(all);
@@ -88,10 +85,7 @@ export async function fetchBiquoteHistory<T extends BiquoteHistoryBar>(
       firstTimestamp: normalized.length ? String(normalized[0].t) : null,
       lastTimestamp: normalized.length ? String(normalized.at(-1)!.t) : null,
       duplicatesRemoved: Math.max(0, all.length - normalized.length),
-      gaps: 0,
-      invalid: 0,
-      openCandlesRemoved: 0,
-      paginationMode: cursor ? "provider-cursor" : "single-page-or-provider-limited",
+      paginationMode,
     },
   };
 }
