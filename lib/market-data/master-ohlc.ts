@@ -11,7 +11,7 @@ export type MasterCandle = {
 
 export type AggregatedCandle = MasterCandle & { sourceInterval: "1m" | "15m" | "1h" | "4h" | "1d" };
 
-const TIMEFRAME_MS: Record<Exclude<AggregatedCandle["sourceInterval"], "1m">, number> = {
+const TIMEFRAME_MS: Record<"15m" | "1h" | "4h" | "1d", number> = {
   "15m": 15 * 60 * 1000,
   "1h": 60 * 60 * 1000,
   "4h": 4 * 60 * 60 * 1000,
@@ -44,7 +44,7 @@ function bucketStart(timestamp: number, intervalMs: number): number {
   return Math.floor(timestamp / intervalMs) * intervalMs;
 }
 
-export function aggregate1mCandles(candles: MasterCandle[], target: Exclude<AggregatedCandle["sourceInterval"], "1m">): AggregatedCandle[] {
+export function aggregate1mCandles(candles: MasterCandle[], target: "15m" | "1h" | "4h" | "1d"): AggregatedCandle[] {
   const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
   const intervalMs = TIMEFRAME_MS[target];
   const groups = new Map<number, MasterCandle[]>();
@@ -79,6 +79,24 @@ export function aggregate1mCandles(candles: MasterCandle[], target: Exclude<Aggr
     });
 }
 
-export function toTechnicalCandles(candles: MasterCandle[]): Array<{ t: string; o: number; h: number; l: number; c: number }> {
-  return candles.map(({ t, o, h, l, c }) => ({ t, o, h, l, c }));
+export function validateMasterCandleSequence(candles: MasterCandle[]): { valid: boolean; duplicates: number; gaps: number; invalid: number } {
+  const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+  let duplicates = 0;
+  let gaps = 0;
+  let invalid = 0;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const current = sorted[i];
+    const ts = Date.parse(current.t);
+    if (!Number.isFinite(ts) || !(current.h >= current.o && current.h >= current.c && current.h >= current.l) || !(current.l <= current.o && current.l <= current.c && current.l <= current.h)) invalid += 1;
+    if (i === 0) continue;
+    const previousTs = Date.parse(sorted[i - 1].t);
+    const delta = ts - previousTs;
+    if (delta === 0) duplicates += 1;
+    else if (delta > 60 * 1000) gaps += 1;
+  }
+  return { valid: duplicates === 0 && invalid === 0, duplicates, gaps, invalid };
+}
+
+export function toTechnicalCandles(candles: MasterCandle[]): Array<{ t: string; o: number; h: number; l: number; c: number; volume?: number; tickVolume?: number }> {
+  return candles.map(({ t, o, h, l, c, volume, tickVolume }) => ({ t, o, h, l, c, volume, tickVolume }));
 }
