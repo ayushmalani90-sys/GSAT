@@ -5,7 +5,16 @@ export type Level = { price: number; strength: number; touches: number; distance
 export type TechnicalAnalysis = {
   price: number | null;
   samples: number;
-  ema: { ema20: number | null; ema50: number | null; ema200: number | null; priceVsEma20: "Above" | "Below" | "At" | "Unavailable"; priceVsEma50: "Above" | "Below" | "At" | "Unavailable"; priceVsEma200: "Above" | "Below" | "At" | "Unavailable"; bias: string; interpretation: string };
+  ema: {
+    ema20: number | null;
+    ema50: number | null;
+    ema200: number | null;
+    priceVsEma20: "Above" | "Below" | "At" | "Unavailable";
+    priceVsEma50: "Above" | "Below" | "At" | "Unavailable";
+    priceVsEma200: "Above" | "Below" | "At" | "Unavailable";
+    bias: string;
+    interpretation: string;
+  };
   momentum: { rsi14: number | null; rsiBias: string; macd: number | null; macdSignal: number | null; macdHistogram: number | null; macdBias: string; interpretation: string };
   volatility: { atr14: number | null; atrPercent: number | null; interpretation: string };
   supportResistance: { supports: Level[]; resistances: Level[]; method: string };
