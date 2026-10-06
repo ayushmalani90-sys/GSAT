@@ -44,16 +44,26 @@ async function fetchBiquoteTick(symbol: SymbolCode) {
   return data;
 }
 
+async function buildMtf(symbol: SymbolCode) {
+  const out: Record<string, ReturnType<typeof analyze>> = {};
+  for (const tf of TIMEFRAMES) {
+    const candles = await fetchHistory(symbol, TF_AGGREGATION[tf]);
+    out[tf] = analyze(candles);
+  }
+  return out;
+}
+
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const timeframeParam = params.get("timeframe") ?? "1H";
   if (!(TIMEFRAMES as readonly string[]).includes(timeframeParam)) return NextResponse.json({ error: `Unsupported timeframe: ${timeframeParam}` }, { status: 400 });
   const timeframe = timeframeParam as Timeframe;
   try {
-    const [goldCandles, silverCandles, goldTick, silverTick] = await Promise.all([
+    const [goldCandles, silverCandles, goldTick, silverTick, goldMtf, silverMtf] = await Promise.all([
       fetchHistory("XAUUSD", TF_AGGREGATION[timeframe]),
       fetchHistory("XAGUSD", TF_AGGREGATION[timeframe]),
       fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
+      buildMtf("XAUUSD"), buildMtf("XAGUSD"),
     ]);
     const gold = analyze(goldCandles), silver = analyze(silverCandles);
     const sourceMode = "biquote-native-timeframe";
@@ -64,6 +74,7 @@ export async function GET(request: Request) {
       feed: { gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" }, silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" } },
       history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, target: MAX_CANDLES },
       gold: { intraday: gold }, silver: { intraday: silver },
+      mtf: { gold: goldMtf, silver: silverMtf },
       methodology: { note: analysisSourceNote(), indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.", dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.", display: "TradingView OANDA widgets remain display-only. No OANDA API is used." },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
