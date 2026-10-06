@@ -21,6 +21,13 @@ export type TechnicalAnalysis = {
   fibonacci: { swingLow: number | null; swingHigh: number | null; levels: Array<{ ratio: string; price: number }>; interpretation: string };
   volumeProfile: { poc: number | null; highVolumeNodes: number[]; lowVolumeNodes: number[]; interpretation: string };
   patterns: Array<{ name: string; direction: "Bullish" | "Bearish" | "Neutral"; confidence: number; description: string }>;
+  confluence: {
+    score: number;
+    label: "Very Bearish" | "Bearish" | "Neutral" | "Bullish" | "Very Bullish";
+    coverage: number;
+    components: Array<{ name: string; weight: number; score: number | null; contribution: number }>;
+    interpretation: string;
+  };
   overall: { bias: string; summary: string };
 };
 
@@ -146,6 +153,65 @@ function detectPatterns(candles: TechnicalCandle[]) {
   return patterns.slice(0, 4);
 }
 
+function confluenceLabel(score: number): TechnicalAnalysis["confluence"]["label"] {
+  if (score >= 80) return "Very Bullish";
+  if (score >= 60) return "Bullish";
+  if (score <= 20) return "Very Bearish";
+  if (score <= 40) return "Bearish";
+  return "Neutral";
+}
+
+function calculateConfluence(args: {
+  price: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  ema200: number | null;
+  rsi14: number | null;
+  macdHistogram: number | null;
+  supports: Level[];
+  resistances: Level[];
+  patterns: TechnicalAnalysis["patterns"];
+  atrPercent: number | null;
+}): TechnicalAnalysis["confluence"] {
+  const components: TechnicalAnalysis["confluence"]["components"] = [];
+  const emaValues = [
+    args.price != null && args.ema20 != null ? args.price > args.ema20 ? 100 : args.price < args.ema20 ? 0 : 50 : null,
+    args.price != null && args.ema50 != null ? args.price > args.ema50 ? 100 : args.price < args.ema50 ? 0 : 50 : null,
+    args.price != null && args.ema200 != null ? args.price > args.ema200 ? 100 : args.price < args.ema200 ? 0 : 50 : null,
+  ].filter((x): x is number => x != null);
+  components.push({ name: "EMA structure", weight: 25, score: emaValues.length ? emaValues.reduce((a, b) => a + b, 0) / emaValues.length : null, contribution: 0 });
+  components.push({ name: "RSI", weight: 15, score: args.rsi14 == null ? null : args.rsi14 > 50 && args.rsi14 < 70 ? 100 : args.rsi14 < 50 ? 0 : 50, contribution: 0 });
+  components.push({ name: "MACD", weight: 20, score: args.macdHistogram == null ? null : args.macdHistogram > 0 ? 100 : args.macdHistogram < 0 ? 0 : 50, contribution: 0 });
+  const pattern = args.patterns.find(p => p.direction !== "Neutral");
+  components.push({ name: "Price action", weight: 15, score: args.patterns.length ? pattern?.direction === "Bullish" ? 100 : pattern?.direction === "Bearish" ? 0 : 50 : null, contribution: 0 });
+  let levelScore: number | null = null;
+  if (args.price != null) {
+    const support = args.supports[0]?.price;
+    const resistance = args.resistances[0]?.price;
+    if (support != null && resistance != null && resistance > support) levelScore = Math.max(0, Math.min(100, ((args.price - support) / (resistance - support)) * 100));
+    else if (support != null && args.price >= support) levelScore = 65;
+    else if (resistance != null && args.price <= resistance) levelScore = 35;
+  }
+  components.push({ name: "Support / resistance", weight: 15, score: levelScore, contribution: 0 });
+  const atrScore = args.atrPercent == null ? null : args.atrPercent <= 1 ? 70 : args.atrPercent <= 2 ? 60 : args.atrPercent <= 3 ? 50 : 40;
+  components.push({ name: "Volatility", weight: 10, score: atrScore, contribution: 0 });
+  const usable = components.filter(c => c.score != null);
+  const weightSum = usable.reduce((sum, c) => sum + c.weight, 0);
+  const weightedSum = usable.reduce((sum, c) => sum + (c.score ?? 0) * c.weight, 0);
+  const scoreValue = weightSum > 0 ? Math.round(weightedSum / weightSum) : 50;
+  const coverage = Math.round(weightSum);
+  for (const c of components) c.contribution = c.score == null ? 0 : Number(((c.score * c.weight) / Math.max(weightSum, 1)).toFixed(2));
+  return {
+    score: scoreValue,
+    label: confluenceLabel(scoreValue),
+    coverage,
+    components,
+    interpretation: coverage < 100
+      ? "Technical confluence is " + scoreValue + "/100 (" + confluenceLabel(scoreValue) + ") with " + coverage + "% weight coverage; unavailable inputs are excluded rather than fabricated."
+      : "Technical confluence is " + scoreValue + "/100 (" + confluenceLabel(scoreValue) + ") across the defined technical evidence set.",
+  };
+}
+
 export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
   const closes = sorted.map(c => c.c).filter(Number.isFinite);
@@ -166,6 +232,18 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const vp = volumeProfile(sorted);
   const patterns = detectPatterns(sorted);
   const score = (emaBias.includes("Bullish") ? 1 : emaBias.includes("Bearish") ? -1 : 0) + (rsiBias.includes("Bullish") ? 1 : rsiBias.includes("Bearish") ? -1 : 0) + (macdBias.includes("Bullish") ? 1 : macdBias.includes("Bearish") ? -1 : 0) + patterns.slice(0, 2).reduce((s, p) => s + (p.direction === "Bullish" ? 0.5 : p.direction === "Bearish" ? -0.5 : 0), 0);
+  const confluence = calculateConfluence({
+    price,
+    ema20: e20,
+    ema50: e50,
+    ema200: e200,
+    rsi14,
+    macdHistogram: m.histogram,
+    supports: sr.supports,
+    resistances: sr.resistances,
+    patterns,
+    atrPercent,
+  });
   const overallBias = score >= 1.5 ? "Bullish" : score <= -1.5 ? "Bearish" : "Mixed";
   return {
     price,
@@ -177,6 +255,7 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
     fibonacci: fib,
     volumeProfile: vp,
     patterns,
-    overall: { bias: overallBias, summary: `${overallBias} technical posture derived from EMA structure, RSI, MACD and price-action patterns; ATR is treated as volatility, not directional evidence.` },
+    confluence,
+    overall: { bias: overallBias, summary: `${overallBias} technical posture derived from EMA structure, RSI, MACD and price-action patterns; ATR is treated as volatility, not directional evidence. Confluence is a weighted evidence score, not a price prediction.` },
   };
 }
