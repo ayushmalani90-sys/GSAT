@@ -193,12 +193,18 @@ async function fetchFeed(
   onRequest: () => void,
   rangeFrom?: string,
   rangeTo?: string,
+  fullHistory = false,
 ): Promise<FeedResult> {
   const url = new URL(BIQUOTE_BASE + "/" + symbol + "/ohlc");
   url.searchParams.set("interval", timeframe);
   url.searchParams.set("limit", "1000");
-  url.searchParams.set("from", rangeFrom ?? new Date(now.getTime() - OVERLAP_MS[timeframe]).toISOString());
-  url.searchParams.set("to", rangeTo ?? now.toISOString());
+  if (rangeFrom && rangeTo) {
+    url.searchParams.set("from", rangeFrom);
+    url.searchParams.set("to", rangeTo);
+  } else if (!fullHistory) {
+    url.searchParams.set("from", new Date(now.getTime() - OVERLAP_MS[timeframe]).toISOString());
+    url.searchParams.set("to", now.toISOString());
+  }
 
   const payload = await fetchJson(url, 3, onRequest) as { bars?: BiQuoteBar[]; message?: string };
   if (!Array.isArray(payload.bars)) {
@@ -358,7 +364,7 @@ Deno.serve(async (request: Request) => {
   }
 
   const now = new Date();
-  let requestBody: { forceTimeframes?: unknown; from?: unknown; to?: unknown } = {};
+  let requestBody: { forceTimeframes?: unknown; from?: unknown; to?: unknown; bootstrap?: unknown } = {};
   try {
     requestBody = await request.json();
   } catch {
@@ -371,10 +377,14 @@ Deno.serve(async (request: Request) => {
       ))]
     : [];
   const timeframes = forced.length > 0 ? forced : selectedTimeframes(now);
+  const bootstrap = requestBody.bootstrap === true;
   const rangeFrom = typeof requestBody.from === "string" ? requestBody.from : undefined;
   const rangeTo = typeof requestBody.to === "string" ? requestBody.to : undefined;
   if ((rangeFrom && !rangeTo) || (!rangeFrom && rangeTo)) {
     return json({ error: "Both from and to are required for a bounded history sample" }, 400);
+  }
+  if (bootstrap && rangeFrom) {
+    return json({ error: "Bootstrap uses the provider's default latest-history response; do not combine it with from/to" }, 400);
   }
   if (rangeFrom && rangeTo) {
     const fromMs = Date.parse(rangeFrom);
@@ -459,7 +469,7 @@ Deno.serve(async (request: Request) => {
     }
 
     const tasks = SYMBOLS.flatMap((symbol) =>
-      timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo)),
+      timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo, bootstrap)),
     );
 
     const settled = await Promise.allSettled(tasks);
@@ -539,6 +549,7 @@ Deno.serve(async (request: Request) => {
         source: "BiQuote",
         intervalSelection: timeframes,
         historicalProbe: Boolean(rangeFrom),
+        historicalBootstrap: bootstrap,
         requestedRange: rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : null,
         feeds: feeds.map((feed) => ({
           symbol: feed.symbol,
@@ -587,6 +598,7 @@ Deno.serve(async (request: Request) => {
     return json({
       status,
       historicalProbe: Boolean(rangeFrom),
+      historicalBootstrap: bootstrap,
       requestedRange: rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : null,
       runId,
       symbols: SYMBOLS,
