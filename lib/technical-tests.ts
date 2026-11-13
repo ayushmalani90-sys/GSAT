@@ -1,4 +1,5 @@
 import { atr, ema, macd, rma, rsi } from "./technical-reference";
+import { analyze } from "./technical";
 
 function assertNear(name: string, actual: number | null, expected: number, tolerance = 1e-10) {
   if (actual == null || Math.abs(actual - expected) > tolerance) {
@@ -31,5 +32,22 @@ export function runIndicatorSelfTests() {
     t: String(i), o: 99, h: 101, l: 99, c: 100,
   })), 14), 2);
 
-  return { passed: true, cases: 10 };
+  const narrowRange = values.map((c, i) => ({
+    t: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+    o: c - 0.1, h: c + 0.2, l: c - 0.2, c,
+  }));
+  const wideRange = values.map((c, i) => ({
+    t: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(),
+    o: c - 0.1, h: c + 5, l: c - 5, c,
+  }));
+  const narrowAnalysis = analyze(narrowRange);
+  const wideAnalysis = analyze(wideRange);
+  if (narrowAnalysis.volatility.atr14 === wideAnalysis.volatility.atr14) {
+    throw new Error("ATR confluence test fixture did not create different volatility");
+  }
+  if (narrowAnalysis.confluence.score !== wideAnalysis.confluence.score) {
+    throw new Error("Directional confluence must not change solely because ATR volatility changed");
+  }
+
+  return { passed: true, cases: 11 };
 }
