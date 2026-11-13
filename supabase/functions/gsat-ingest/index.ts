@@ -518,7 +518,7 @@ Deno.serve(async (request: Request) => {
 
     const failedFeeds = errors.length;
     const partial = failedFeeds > 0 || rejectedCount > 0;
-    const allFailed = failedFeeds === SYMBOLS.length * timeframes.length;
+    const allFailed = failedFeeds === tasks.length;
     const status = allFailed ? "failed" : partial ? "partial" : "succeeded";
     const errorMessage = errors.length
       ? errors.map((x) => x.symbol + " " + x.timeframe + ": " + x.error).join(" | ").slice(0, 4_000)
