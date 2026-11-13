@@ -49,7 +49,6 @@ function patternBase() {
 export function runAdvancedIndicatorTests() {
   let cases = 0;
 
-  // Structural strength must not be boosted merely because a zone is closer to price.
   const srCandles = oscillatingFixture(180, 0.8);
   const srNear = verifiedSupportResistance(srCandles, 160);
   const srFar = verifiedSupportResistance(srCandles, 180);
@@ -62,19 +61,17 @@ export function runAdvancedIndicatorTests() {
   assert(srNear.supports[0].distancePct !== srFar.supports[0].distancePct, "Distance fixture did not change proximity");
   cases += 1;
 
-  // Fibonacci must choose a confirmed, alternating, sufficiently large swing leg.
   const fib = verifiedFibonacci(fibonacciFixture(10), 108);
   assert(fib.swingLow != null && fib.swingHigh != null, "Fibonacci did not select the known confirmed swing");
   assertNear("Fibonacci swing low", fib.swingLow, 90);
   assertNear("Fibonacci swing high", fib.swingHigh, 110);
-  assert(fib.direction === "Upswing", "Fibonacci selected the wrong swing direction");
+  assert("direction" in fib && fib.direction === "Upswing", "Fibonacci selected the wrong swing direction");
   assertNear("Fib 23.6%", fib.levels[0]?.price ?? null, 105.28);
   assertNear("Fib 38.2%", fib.levels[1]?.price ?? null, 102.36);
   assertNear("Fib 50%", fib.levels[2]?.price ?? null, 100);
-  assert(fib.anchors?.endIndex < 67, "Fibonacci used an unconfirmed pivot at the end of the series");
+  assert("anchors" in fib && fib.anchors.endIndex < 67, "Fibonacci used an unconfirmed pivot at the end of the series");
   cases += 1;
 
-  // Volume must be distributed across the candle range and the 70% value area must be present.
   const profileCandles: TechnicalCandle[] = [];
   for (let i = 0; i < 20; i += 1) profileCandles.push(candle(i, 2, 3, 1, 2, { tickVolume: 10 }));
   for (let i = 20; i < 30; i += 1) profileCandles.push(candle(i, 8, 9, 7, 8, { tickVolume: 10 }));
@@ -92,7 +89,6 @@ export function runAdvancedIndicatorTests() {
   assert(zeroProfile.poc == null, "Zero tick volume must not produce a fabricated POC");
   cases += 1;
 
-  // Engulfing quality must be derived from measurable candle geometry and include invalidation.
   const bullish = patternBase();
   bullish[10] = candle(10, 10, 10.2, 8, 8.2);
   bullish[11] = candle(11, 8, 10.5, 7.5, 10.2);
@@ -119,7 +115,6 @@ export function runAdvancedIndicatorTests() {
   assert(verifiedPatterns(rejection).some(p => p.name === "Bullish Rejection"), "Bullish rejection fixture was not detected");
   cases += 1;
 
-  // Missing EMA200 must reduce EMA component weight instead of silently keeping the full 25%.
   const shortAnalysis = analyzeVerified(oscillatingFixture(100, 0.2));
   const emaComponent = shortAnalysis.confluence.components.find(component => component.name === "EMA structure");
   assert(shortAnalysis.ema.ema200 == null, "Short-history fixture unexpectedly has EMA200");
@@ -127,7 +122,6 @@ export function runAdvancedIndicatorTests() {
   assert(shortAnalysis.confluence.coverage < 100, "Short history was reported as complete evidence coverage");
   cases += 1;
 
-  // Changing only candle range changes ATR but must not change directional confluence.
   const narrow = oscillatingFixture(240, 0.2);
   const wide = narrow.map(c => ({ ...c, h: c.c + 5, l: c.c - 5 }));
   const narrowAnalysis = analyzeVerified(narrow);
@@ -136,7 +130,6 @@ export function runAdvancedIndicatorTests() {
   assert(narrowAnalysis.confluence.score === wideAnalysis.confluence.score, "ATR-only change altered directional confluence");
   cases += 1;
 
-  // A no-pattern result is neutral evidence, not an automatic directional vote.
   const flat = Array.from({ length: 240 }, (_, i) => candle(i, 100, 101, 99, 100));
   const flatAnalysis = analyzeVerified(flat);
   const priceAction = flatAnalysis.confluence.components.find(component => component.name === "Price action");
