@@ -485,6 +485,8 @@ Deno.serve(async (request: Request) => {
       details: {
         source: "BiQuote",
         intervalSelection: timeframes,
+        historicalProbe: Boolean(rangeFrom),
+        requestedRange: rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : null,
         feeds: feeds.map((feed) => ({
           symbol: feed.symbol,
           timeframe: feed.timeframe,
@@ -500,34 +502,39 @@ Deno.serve(async (request: Request) => {
       error_message: errorMessage,
     });
 
-    const healthRows = await restRequest(
-      "gsat_market_data_health?select=consecutive_failures&id=eq.1",
-      "GET",
-      credentials.key,
-    ) as Array<{ consecutive_failures: number }>;
-    const previousFailures = Number(healthRows?.[0]?.consecutive_failures ?? 0);
-    const healthPatch: Record<string, unknown> = {
-      last_attempt_at: runStart,
-      status: allFailed ? "offline" : partial ? "degraded" : "healthy",
-      consecutive_failures: allFailed ? previousFailures + 1 : 0,
-      last_error: errorMessage,
-      updated_at: new Date().toISOString(),
-    };
-    if (!allFailed) healthPatch.last_success_at = new Date().toISOString();
-    if (commonLatest1m !== null) {
-      healthPatch.latest_closed_1m_candle_at = new Date(commonLatest1m).toISOString();
+    // Historical source probes must not mark the live collector unhealthy.
+    if (!rangeFrom) {
+      const healthRows = await restRequest(
+        "gsat_market_data_health?select=consecutive_failures&id=eq.1",
+        "GET",
+        credentials.key,
+      ) as Array<{ consecutive_failures: number }>;
+      const previousFailures = Number(healthRows?.[0]?.consecutive_failures ?? 0);
+      const healthPatch: Record<string, unknown> = {
+        last_attempt_at: runStart,
+        status: allFailed ? "offline" : partial ? "degraded" : "healthy",
+        consecutive_failures: allFailed ? previousFailures + 1 : 0,
+        last_error: errorMessage,
+        updated_at: new Date().toISOString(),
+      };
+      if (!allFailed) healthPatch.last_success_at = new Date().toISOString();
+      if (commonLatest1m !== null) {
+        healthPatch.latest_closed_1m_candle_at = new Date(commonLatest1m).toISOString();
+      }
+  
+      await restRequest(
+        "gsat_market_data_health?id=eq.1",
+        "PATCH",
+        credentials.key,
+        healthPatch,
+        "return=minimal",
+      );
     }
-
-    await restRequest(
-      "gsat_market_data_health?id=eq.1",
-      "PATCH",
-      credentials.key,
-      healthPatch,
-      "return=minimal",
-    );
 
     return json({
       status,
+      historicalProbe: Boolean(rangeFrom),
+      requestedRange: rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : null,
       runId,
       symbols: SYMBOLS,
       timeframes,
