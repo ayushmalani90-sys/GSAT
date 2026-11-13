@@ -171,7 +171,6 @@ function calculateConfluence(args: {
   supports: Level[];
   resistances: Level[];
   patterns: TechnicalAnalysis["patterns"];
-  atrPercent: number | null;
 }): TechnicalAnalysis["confluence"] {
   const components: TechnicalAnalysis["confluence"]["components"] = [];
   const emaValues = [
@@ -193,8 +192,8 @@ function calculateConfluence(args: {
     else if (resistance != null && args.price <= resistance) levelScore = 35;
   }
   components.push({ name: "Support / resistance", weight: 15, score: levelScore, contribution: 0 });
-  const atrScore = args.atrPercent == null ? null : args.atrPercent <= 1 ? 70 : args.atrPercent <= 2 ? 60 : args.atrPercent <= 3 ? 50 : 40;
-  components.push({ name: "Volatility", weight: 10, score: atrScore, contribution: 0 });
+  // ATR measures range/volatility, not bullish or bearish direction.
+  // It remains available in the volatility panel but is excluded from directional confluence.
   const usable = components.filter(c => c.score != null);
   const weightSum = usable.reduce((sum, c) => sum + c.weight, 0);
   const weightedSum = usable.reduce((sum, c) => sum + (c.score ?? 0) * c.weight, 0);
@@ -242,7 +241,6 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
     supports: sr.supports,
     resistances: sr.resistances,
     patterns,
-    atrPercent,
   });
   const overallBias = score >= 1.5 ? "Bullish" : score <= -1.5 ? "Bearish" : "Mixed";
   return {

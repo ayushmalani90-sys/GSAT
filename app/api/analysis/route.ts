@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { analyze, type TechnicalCandle } from "../../../lib/technical";
-import { normalizeMasterCandles, type MasterCandle } from "../../../lib/market-data/master-ohlc";
+import { analyzeVerified } from "../../../lib/technical-advanced";
+import type { TechnicalCandle } from "../../../lib/technical";
+import { normalizeMasterCandles } from "../../../lib/market-data/master-ohlc";
 import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
 
 type BiquoteTick = { symbol?: string; mid?: number; bid?: number; ask?: number; dayDiffPercent?: number; timestamp?: string; stale?: boolean; marketState?: string; quoteAgeSeconds?: number };
@@ -16,14 +17,14 @@ async function fetchHistory(symbol: SymbolCode, interval: string): Promise<Techn
   const seen = new Set<string>();
   let cursor: string | null = null;
   for (let page = 0; page < 20 && all.length < MAX_CANDLES; page += 1) {
-    const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
+    const url = new URL("https://biquote.io/api/" + symbol + "/ohlc");
     url.searchParams.set("interval", interval);
     url.searchParams.set("limit", String(Math.min(1000, MAX_CANDLES - all.length)));
     if (cursor) url.searchParams.set("cursor", cursor);
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) {
       if (all.length) break;
-      throw new Error(`BiQuote ${symbol} ${interval} candles unavailable (${response.status})`);
+      throw new Error("BiQuote " + symbol + " " + interval + " candles unavailable (" + response.status + ")");
     }
     const data = (await response.json()) as CandleResponse;
     if (!Array.isArray(data.bars) || data.bars.length === 0) break;
@@ -37,18 +38,18 @@ async function fetchHistory(symbol: SymbolCode, interval: string): Promise<Techn
 }
 
 async function fetchBiquoteTick(symbol: SymbolCode) {
-  const response = await fetch(`https://biquote.io/api/${symbol}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`BiQuote ${symbol} quote unavailable (${response.status})`);
+  const response = await fetch("https://biquote.io/api/" + symbol, { cache: "no-store" });
+  if (!response.ok) throw new Error("BiQuote " + symbol + " quote unavailable (" + response.status + ")");
   const data = (await response.json()) as BiquoteTick;
-  if (!Number.isFinite(data.mid)) throw new Error(`BiQuote returned an invalid ${symbol} mid price`);
+  if (!Number.isFinite(data.mid)) throw new Error("BiQuote returned an invalid " + symbol + " mid price");
   return data;
 }
 
 async function buildMtf(symbol: SymbolCode) {
-  const out: Record<string, ReturnType<typeof analyze>> = {};
+  const out: Record<string, ReturnType<typeof analyzeVerified>> = {};
   for (const tf of TIMEFRAMES) {
     const candles = await fetchHistory(symbol, TF_AGGREGATION[tf]);
-    out[tf] = analyze(candles);
+    out[tf] = analyzeVerified(candles);
   }
   return out;
 }
@@ -56,7 +57,7 @@ async function buildMtf(symbol: SymbolCode) {
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const timeframeParam = params.get("timeframe") ?? "1H";
-  if (!(TIMEFRAMES as readonly string[]).includes(timeframeParam)) return NextResponse.json({ error: `Unsupported timeframe: ${timeframeParam}` }, { status: 400 });
+  if (!(TIMEFRAMES as readonly string[]).includes(timeframeParam)) return NextResponse.json({ error: "Unsupported timeframe: " + timeframeParam }, { status: 400 });
   const timeframe = timeframeParam as Timeframe;
   try {
     const [goldCandles, silverCandles, goldTick, silverTick, goldMtf, silverMtf] = await Promise.all([
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
       fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
       buildMtf("XAUUSD"), buildMtf("XAGUSD"),
     ]);
-    const gold = analyze(goldCandles), silver = analyze(silverCandles);
+    const gold = analyzeVerified(goldCandles), silver = analyzeVerified(silverCandles);
     const sourceMode = "biquote-native-timeframe";
     return NextResponse.json({
       source: ANALYSIS_SOURCE_POLICY.liveQuotes,
@@ -75,7 +76,13 @@ export async function GET(request: Request) {
       history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, target: MAX_CANDLES },
       gold: { intraday: gold }, silver: { intraday: silver },
       mtf: { gold: goldMtf, silver: silverMtf },
-      methodology: { note: analysisSourceNote(), indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.", dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.", display: "TradingView OANDA widgets remain display-only. No OANDA API is used." },
+      methodology: {
+        note: analysisSourceNote(),
+        indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.",
+        advanced: "Structural zones use confirmed pivots and distance-independent strength; Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile distributes broker/tick volume across candle ranges and calculates a 70% value area; candlestick quality is geometric and not a win probability.",
+        dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.",
+        display: "TradingView OANDA widgets remain display-only. No OANDA API is used.",
+      },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "BiQuote analysis unavailable" }, { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } });
