@@ -21,3 +21,8 @@ The analysis API requests up to 1,000 BiQuote candles for the selected timeframe
 4. Histogram equals MACD minus signal.
 5. ATR14 uses true range with Wilder RMA.
 6. Differences versus TradingView are treated as source/candle-set differences unless the same completed BiQuote candle set is used.
+
+
+## Validation update
+
+The self-test suite now includes fixed golden outputs for EMA20/50/200, RSI14, MACD 12/26/9 and ATR14. It also verifies that changing only candle range (and therefore ATR) cannot change the directional confluence score. ATR remains visible in the volatility analysis but is excluded from directional scoring.
