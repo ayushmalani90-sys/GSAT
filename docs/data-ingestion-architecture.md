@@ -47,12 +47,12 @@ The target is a rolling two years by `candle_open`. A daily retention job prunes
 2. Read the latest stored candle timestamp for each symbol/timeframe. Request from that timestamp minus the timeframe-specific overlap to the current time.
 3. Limit each catch-up request to 900 bars (below BiQuote's 1,000-bar response cap). If the collector missed a longer period, advance the range by at most 900 bars; the next one-minute run continues from the newest stored candle until caught up. When a timeframe has no stored history, use the bounded recent-window request; use the explicit bootstrap mode only for the one-time default-history import.
 4. Fetch native 15m, 1h, 4h and 1d bars only when a bar boundary has closed, and always allow a small overlap for late publication/correction.
-4. Use BiQuote's documented `from` and `to` time-range parameters and respect its 1,000-bar maximum per response. Do not depend on undocumented cursor pagination.
-5. Normalize timestamps to UTC; validate finite positive OHLC values and OHLC ordering; reject open/incomplete bars.
-6. Upsert by `(symbol, timeframe, candle_open)`. Preserve `first_ingested_at`; refresh OHLC, volume fields and `last_ingested_at` on a source correction.
-7. Check sequence continuity and expected candle boundaries. Record gaps and rejected rows; do not fabricate missing candles.
-8. Update feed-health state and finish the run record.
-9. A separate daily task prunes rows older than two years only after successful validation.
+5. Use BiQuote's documented `from` and `to` time-range parameters and respect its 1,000-bar maximum per response. Do not depend on undocumented cursor pagination.
+6. Normalize timestamps to UTC; validate finite positive OHLC values and OHLC ordering; reject open/incomplete bars.
+7. Upsert by `(symbol, timeframe, candle_open)`. Preserve `first_ingested_at`; refresh OHLC, volume fields and `last_ingested_at` on a source correction.
+8. Check sequence continuity and expected candle boundaries. Record gaps and rejected rows; do not fabricate missing candles.
+9. Update feed-health state and finish the run record.
+10. A separate daily task prunes rows older than two years only after successful validation.
 
 **Failure handling:** use bounded retries with backoff for transient HTTP failures; never mark a run successful if one symbol/timeframe silently failed. A partial result is recorded as `partial`; if every scheduled task fails, the run is `failed`. Each scheduled task starts from its latest stored candle, so the overlap repairs recent corrections and the 900-bar chunking catches up after missed runs.
 
