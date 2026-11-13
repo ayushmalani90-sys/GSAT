@@ -69,7 +69,7 @@ export function runAdvancedIndicatorTests() {
   assertNear("Fib 23.6%", fib.levels[0]?.price ?? null, 105.28);
   assertNear("Fib 38.2%", fib.levels[1]?.price ?? null, 102.36);
   assertNear("Fib 50%", fib.levels[2]?.price ?? null, 100);
-  assert("anchors" in fib && fib.anchors.endIndex < 67, "Fibonacci used an unconfirmed pivot at the end of the series");
+  assert("anchors" in fib && typeof fib.anchors?.endIndex === "number" && fib.anchors.endIndex < 67, "Fibonacci used an unconfirmed pivot at the end of the series");
   cases += 1;
 
   const profileCandles: TechnicalCandle[] = [];
