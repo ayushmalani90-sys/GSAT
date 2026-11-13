@@ -149,3 +149,6 @@ A one-time default-history bootstrap fetched 2,688 bars across both symbols and 
 
 
 **Native-timeframe gap classification:** the 202 interval gaps counted during bootstrap are consistent with the observed precious-metals session schedule, not 202 missing bars: daily series have recurring 48–72 hour weekend gaps; hourly series have recurring two-hour daily session breaks; 15m series have corresponding 75-minute breaks. The current gap counter is intentionally conservative and records these intervals; schedule-aware classification remains a separate validation improvement.
+
+
+**Incremental recovery test (validation, 2026-11-13):** one recent XAUUSD 1m candle was deliberately corrupted and one matching XAGUSD 1m candle was deleted in the validation database. The normal 1m collector was then invoked within its 12-minute overlap window. It corrected the XAUUSD row and reinserted the XAGUSD row. A fresh BiQuote request confirmed exact OHLC and tick-volume parity for both restored rows. No production data was touched.
