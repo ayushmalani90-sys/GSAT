@@ -57,6 +57,7 @@ const OVERLAP_MS: Record<Timeframe, number> = {
   "1d": 3 * 86_400_000,
 };
 const BIQUOTE_BASE = "https://biquote.io/api";
+const MAX_CATCHUP_BARS = 900; // Leave room for overlap under BiQuote's 1,000-bar response cap.
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -308,6 +309,35 @@ async function restRequest(
   return JSON.parse(text);
 }
 
+async function getLatestStoredCandleOpen(
+  symbol: SymbolCode,
+  timeframe: Timeframe,
+  key: string,
+): Promise<string | null> {
+  const rows = await restRequest(
+    "gsat_market_candles?select=candle_open&symbol=eq." + symbol +
+      "&timeframe=eq." + timeframe + "&order=candle_open.desc&limit=1",
+    "GET",
+    key,
+  ) as Array<{ candle_open: string }>;
+  return rows?.[0]?.candle_open ?? null;
+}
+
+function scheduledCatchupRange(
+  latestCandleOpen: string,
+  timeframe: Timeframe,
+  now: Date,
+): { from: string; to: string } {
+  const latestMs = Date.parse(latestCandleOpen);
+  if (!Number.isFinite(latestMs)) throw new Error("Invalid latest stored candle timestamp");
+  const fromMs = Math.max(0, latestMs - OVERLAP_MS[timeframe]);
+  const toMs = Math.min(now.getTime(), latestMs + MAX_CATCHUP_BARS * INTERVAL_MS[timeframe]);
+  return {
+    from: new Date(fromMs).toISOString(),
+    to: new Date(toMs).toISOString(),
+  };
+}
+
 async function getMarketState(symbol: SymbolCode, onRequest: () => void): Promise<string> {
   const url = new URL(BIQUOTE_BASE + "/" + symbol);
   url.searchParams.set("allowStale", "true");
@@ -469,7 +499,32 @@ Deno.serve(async (request: Request) => {
     }
 
     const tasks = SYMBOLS.flatMap((symbol) =>
-      timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo, bootstrap)),
+      timeframes.map(async (timeframe) => {
+        if (rangeFrom && rangeTo) {
+          return fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo, false);
+        }
+        if (bootstrap) {
+          return fetchFeed(symbol, timeframe, now, countRequest, undefined, undefined, true);
+        }
+
+        const latestStored = await getLatestStoredCandleOpen(symbol, timeframe, credentials.key);
+        if (!latestStored) {
+          return fetchFeed(symbol, timeframe, now, countRequest);
+        }
+
+        // Start at the last stored candle minus overlap. If the scheduler was offline,
+        // advance at most 900 bars per run and let the next minute continue the catch-up.
+        const catchup = scheduledCatchupRange(latestStored, timeframe, now);
+        return fetchFeed(
+          symbol,
+          timeframe,
+          now,
+          countRequest,
+          catchup.from,
+          catchup.to,
+          false,
+        );
+      }),
     );
 
     const settled = await Promise.allSettled(tasks);
