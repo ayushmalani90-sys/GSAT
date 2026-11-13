@@ -1,6 +1,6 @@
 # GSAT persistent market-data architecture
 
-**Status:** Design and schema preparation only. Not active in production.  
+**Status:** Validation-only implementation deployed and scheduled. Production remains untouched.  
 **Database target:** Supabase Free (initial validation environment).  
 **Retention target:** 2 years, subject to verified storage capacity and BiQuote historical availability.  
 **Collection cadence:** 1-minute scheduler.  
@@ -27,17 +27,19 @@ The migration creates three tables:
 | `gsat_market_data_ingestion_runs` | One record per scheduled run, with API counts, insert/update/reject counts, gaps and errors |
 | `gsat_market_data_health` | Latest collector status and last successful completed 1m candle |
 
+Server-only RPCs provide atomic candle upserts with insert/update counts, Vault-backed scheduler authentication, and separate retention cleanup for candle data and diagnostic runs.
+
 Candles are stored as native BiQuote timeframes, not synthesized from another interval. This avoids silently changing candle boundaries or indicator inputs during the first migration. The primary key supports per-symbol/per-timeframe time-range queries; a BRIN index supports compact retention scans.
 
 Prices use `double precision` to keep the candle table compact and align with the current JavaScript number-based indicator engine. The original source response should be retained in short-lived diagnostic logs only when needed; do not store full JSON payloads for every candle.
 
 ### Retention
 
-The target is a rolling two years by `candle_open`. The migration installs a pruning function but deliberately does not schedule it. A daily retention job is configured only after database validation. Retention must never run before the collector's backfill and gap-repair logic is proven.
+The target is a rolling two years by `candle_open`. A daily retention job prunes candles older than two years. Ingestion-run diagnostics are retained for 30 days and pruned separately; keeping one run per minute for two years would create roughly 1.05 million log rows and waste the Free database quota. Retention jobs are active only in the validation project at this stage.
 
 ## 3. One-minute ingestion design
 
-**Scheduler:** Supabase Cron, every minute, invoking a dedicated Supabase Edge Function named `gsat-ingest`. Do not use Vercel Hobby Cron for a one-minute schedule.
+**Scheduler:** Supabase Cron, every minute, invoking the dedicated Supabase Edge Function `gsat-ingest`. The function uses a Vault-backed shared secret in addition to the project API key. The one-minute schedule is active in the validation project only. Do not use Vercel Hobby Cron for a one-minute schedule.
 
 **Collector sequence:**
 
@@ -118,10 +120,25 @@ All gates must pass before merge to the production branch or production secrets/
 
 ## 9. Activation checklist
 
-- [ ] Create a Supabase project in the intended region.
-- [ ] Apply the migration to the validation project only.
-- [ ] Store the service-role key in Edge Function secrets (not in Git).
-- [ ] Deploy the collector to the validation project.
-- [ ] Run sample backfill and measure storage.
+- [x] Create a separate Supabase Free validation project in the Mumbai region.
+- [x] Apply the schema and server-only RPC migrations to the validation project only.
+- [x] Deploy the `gsat-ingest` Edge Function to the validation project.
+- [x] Store the scheduler shared secret and publishable key in Supabase Vault; no secret is committed to Git.
+- [x] Activate the one-minute Cron schedule in the validation project only.
+- [x] Test live ingestion for both symbols and all five stored native timeframes.
+- [x] Verify repeat runs upsert existing candles without duplicates.
+- [x] Test the two-year candle retention and 30-day ingestion-log retention functions.
+- [ ] Run a representative historical sample/backfill and measure actual storage growth.
 - [ ] Run parity, continuity, idempotency and recovery tests.
 - [ ] Obtain explicit approval before connecting production or changing the production analysis route.
+
+
+## 10. Validation deployment record (2026-11-13)
+
+The separate Supabase Free validation project is active in the Mumbai region. The migrations and collector are deployed there only; no production database, production secrets, Vercel environment variables, live analysis route, or TradingView UI have been changed.
+
+The first live ingestion run stored 18 completed 1m candles from 20 returned BiQuote bars across XAUUSD and XAGUSD. The two open bars were excluded. A repeated run updated the same 18 rows and inserted zero duplicates. A forced all-timeframe validation run then ingested 1m, 15m, 1h, 4h and 1d data for both symbols with zero rejected bars and zero small gaps. A repeat run updated existing rows rather than duplicating them.
+
+The one-minute validation Cron is active. Daily candle pruning and 30-day ingestion-log pruning are also scheduled in the validation project. This does not constitute production approval.
+
+The measured sample contains 40 candles with an average PostgreSQL heap row size of approximately 120 bytes. This is too small to validate a two-year storage projection. At the theoretical upper bound of 2,102,400 one-minute rows plus native higher-timeframe rows, raw tuple payload alone could be roughly 275 MB before indexes, ingestion logs, database overhead and WAL. The full historical backfill remains blocked until BiQuote's two-year source availability is probed and a larger sample provides a defensible storage projection with at least 20% quota headroom.
