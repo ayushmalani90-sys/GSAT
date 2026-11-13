@@ -116,7 +116,7 @@ All gates must pass before merge to the production branch or production secrets/
 ## 8. Known analytical caveats to address in the later validation phase
 
 - BiQuote tick volume is a tick count, not exchange-traded volume. The existing volume profile must remain explicitly labelled an approximation, not true exchange volume-at-price.
-- ATR is volatility, not directional evidence. The confluence weighting should be reviewed separately before any accuracy claim.
+- ATR is volatility, not directional evidence. The validation branch now excludes ATR from directional confluence; ATR remains a separate volatility measure. A regression test verifies that changing only candle range does not change the directional score.
 - EMA200 must be marked unavailable when sufficient validated history is missing; missing data must not be treated as bullish or bearish evidence.
 - Live spot price and completed candle close are different measurements and must not be presented as if they are the same timestamp.
 
