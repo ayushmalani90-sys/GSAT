@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { analyzeVerified, type TechnicalCandle } from "../../../lib/technical-advanced";
+import { analyzeVerified } from "../../../lib/technical-advanced";
+import type { TechnicalCandle } from "../../../lib/technical";
 import { normalizeMasterCandles } from "../../../lib/market-data/master-ohlc";
 import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
 
