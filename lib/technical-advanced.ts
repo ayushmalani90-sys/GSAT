@@ -360,7 +360,7 @@ function calculateVerifiedConfluence(args: {
     .filter((value): value is number => args.price != null && value != null)
     .map(value => args.price! > value ? 100 : args.price! < value ? 0 : 50);
   const emaWeight = 25 * emaScores.length / 3;
-  components.push({ name: "EMA structure", weight: emaWeight, score: emaScores.length ? emaScores.reduce((sum, value) => sum + value, 0) / emaScores.length : null, contribution: 0 });
+  components.push({ name: "EMA structure", weight: emaWeight, score: emaScores.length ? emaScores.reduce<number>((sum, value) => sum + value, 0) / emaScores.length : null, contribution: 0 });
   components.push({ name: "RSI", weight: 15, score: args.rsi14 == null ? null : args.rsi14 > 70 || args.rsi14 < 30 ? 50 : args.rsi14 > 50 ? 100 : args.rsi14 < 50 ? 0 : 50, contribution: 0 });
   components.push({ name: "MACD", weight: 20, score: args.macdHistogram == null ? null : args.macdHistogram > 0 ? 100 : args.macdHistogram < 0 ? 0 : 50, contribution: 0 });
 
