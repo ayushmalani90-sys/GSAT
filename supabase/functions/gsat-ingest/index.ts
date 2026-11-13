@@ -191,12 +191,14 @@ async function fetchFeed(
   timeframe: Timeframe,
   now: Date,
   onRequest: () => void,
+  rangeFrom?: string,
+  rangeTo?: string,
 ): Promise<FeedResult> {
   const url = new URL(BIQUOTE_BASE + "/" + symbol + "/ohlc");
   url.searchParams.set("interval", timeframe);
   url.searchParams.set("limit", "1000");
-  url.searchParams.set("from", new Date(now.getTime() - OVERLAP_MS[timeframe]).toISOString());
-  url.searchParams.set("to", now.toISOString());
+  url.searchParams.set("from", rangeFrom ?? new Date(now.getTime() - OVERLAP_MS[timeframe]).toISOString());
+  url.searchParams.set("to", rangeTo ?? now.toISOString());
 
   const payload = await fetchJson(url, 3, onRequest) as { bars?: BiQuoteBar[]; message?: string };
   if (!Array.isArray(payload.bars)) {
@@ -356,7 +358,7 @@ Deno.serve(async (request: Request) => {
   }
 
   const now = new Date();
-  let requestBody: { forceTimeframes?: unknown } = {};
+  let requestBody: { forceTimeframes?: unknown; from?: unknown; to?: unknown } = {};
   try {
     requestBody = await request.json();
   } catch {
@@ -369,6 +371,18 @@ Deno.serve(async (request: Request) => {
       ))]
     : [];
   const timeframes = forced.length > 0 ? forced : selectedTimeframes(now);
+  const rangeFrom = typeof requestBody.from === "string" ? requestBody.from : undefined;
+  const rangeTo = typeof requestBody.to === "string" ? requestBody.to : undefined;
+  if ((rangeFrom && !rangeTo) || (!rangeFrom && rangeTo)) {
+    return json({ error: "Both from and to are required for a bounded history sample" }, 400);
+  }
+  if (rangeFrom && rangeTo) {
+    const fromMs = Date.parse(rangeFrom);
+    const toMs = Date.parse(rangeTo);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs >= toMs || toMs > now.getTime()) {
+      return json({ error: "Invalid history sample range" }, 400);
+    }
+  }
   const runStart = now.toISOString();
   let runId: number | null = null;
   let apiRequests = 0;
@@ -392,7 +406,7 @@ Deno.serve(async (request: Request) => {
     if (!runId) throw new Error("Supabase did not return the ingestion run ID");
 
     const tasks = SYMBOLS.flatMap((symbol) =>
-      timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest)),
+      timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo)),
     );
 
     const settled = await Promise.allSettled(tasks);
