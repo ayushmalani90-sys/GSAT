@@ -356,7 +356,19 @@ Deno.serve(async (request: Request) => {
   }
 
   const now = new Date();
-  const timeframes = selectedTimeframes(now);
+  let requestBody: { forceTimeframes?: unknown } = {};
+  try {
+    requestBody = await request.json();
+  } catch {
+    // Cron sends an empty JSON object; an absent body uses the scheduled intervals.
+  }
+  const allowedTimeframes: Timeframe[] = ["1m", "15m", "1h", "4h", "1d"];
+  const forced = Array.isArray(requestBody.forceTimeframes)
+    ? [...new Set(requestBody.forceTimeframes.filter((value): value is Timeframe =>
+        typeof value === "string" && allowedTimeframes.includes(value as Timeframe)
+      ))]
+    : [];
+  const timeframes = forced.length > 0 ? forced : selectedTimeframes(now);
   const runStart = now.toISOString();
   let runId: number | null = null;
   let apiRequests = 0;
