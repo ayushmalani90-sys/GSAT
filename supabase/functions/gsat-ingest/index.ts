@@ -139,11 +139,12 @@ function normalizeBar(
   };
 }
 
-async function fetchJson(url: URL, attempts = 3): Promise<unknown> {
+async function fetchJson(url: URL, attempts = 3, onRequest?: () => void): Promise<unknown> {
   let lastError = "unknown request error";
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
+      onRequest?.();
       const response = await fetch(url, {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(12_000),
@@ -180,6 +181,7 @@ async function fetchFeed(
   symbol: SymbolCode,
   timeframe: Timeframe,
   now: Date,
+  onRequest: () => void,
 ): Promise<FeedResult> {
   const url = new URL(BIQUOTE_BASE + "/" + symbol + "/ohlc");
   url.searchParams.set("interval", timeframe);
@@ -187,9 +189,16 @@ async function fetchFeed(
   url.searchParams.set("from", new Date(now.getTime() - OVERLAP_MS[timeframe]).toISOString());
   url.searchParams.set("to", now.toISOString());
 
-  const payload = await fetchJson(url) as { bars?: BiQuoteBar[]; message?: string };
+  const payload = await fetchJson(url, 3, onRequest) as { bars?: BiQuoteBar[]; message?: string };
   if (!Array.isArray(payload.bars)) {
     throw new Error("BiQuote response did not contain a bars array: " + String(payload.message ?? "unknown response"));
+  }
+  if (payload.bars.length === 0) {
+    const marketState = await getMarketState(symbol, onRequest);
+    if (marketState === "closed") {
+      return { symbol, timeframe, rows: [], rawBars: 0, openBarsExcluded: 0, rejectedBars: 0, gapCount: 0, marketClosed: true };
+    }
+    throw new Error("BiQuote returned no " + timeframe + " bars while market state is " + marketState);
   }
 
   const rows: CandleRow[] = [];
@@ -262,9 +271,10 @@ async function restRequest(
   const { url } = getSupabaseCredentials();
   const headers: Record<string, string> = {
     apikey: key,
-    authorization: "Bearer " + key,
     "content-type": "application/json",
   };
+  // New Supabase secret keys are API keys, not JWTs; legacy service-role keys remain JWTs.
+  if (!key.startsWith("sb_secret_")) headers.authorization = "Bearer " + key;
   if (prefer) headers.prefer = prefer;
 
   const response = await fetch(url + "/rest/v1/" + path, {
@@ -281,10 +291,10 @@ async function restRequest(
   return JSON.parse(text);
 }
 
-async function getMarketState(symbol: SymbolCode): Promise<string> {
+async function getMarketState(symbol: SymbolCode, onRequest: () => void): Promise<string> {
   const url = new URL(BIQUOTE_BASE + "/" + symbol);
   url.searchParams.set("allowStale", "true");
-  const tick = await fetchJson(url) as { marketState?: string };
+  const tick = await fetchJson(url, 3, onRequest) as { marketState?: string };
   return String(tick.marketState ?? "unknown").toLowerCase();
 }
 
@@ -318,6 +328,8 @@ Deno.serve(async (request: Request) => {
   const timeframes = selectedTimeframes(now);
   const runStart = now.toISOString();
   let runId: number | null = null;
+  let apiRequests = 0;
+  const countRequest = () => { apiRequests += 1; };
 
   try {
     const runResult = await restRequest(
@@ -337,34 +349,7 @@ Deno.serve(async (request: Request) => {
     if (!runId) throw new Error("Supabase did not return the ingestion run ID");
 
     const tasks = SYMBOLS.flatMap((symbol) =>
-      timeframes.map(async (timeframe) => {
-        try {
-          return await fetchFeed(symbol, timeframe, now);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (message.includes("bars array")) throw error;
-
-          // Empty windows are normal during market closure; distinguish them from a live-feed failure.
-          try {
-            const marketState = await getMarketState(symbol);
-            if (marketState === "closed") {
-              return {
-                symbol,
-                timeframe,
-                rows: [],
-                rawBars: 0,
-                openBarsExcluded: 0,
-                rejectedBars: 0,
-                gapCount: 0,
-                marketClosed: true,
-              } satisfies FeedResult;
-            }
-          } catch {
-            // Preserve the original candle endpoint error.
-          }
-          throw error;
-        }
-      }),
+      timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest)),
     );
 
     const settled = await Promise.allSettled(tasks);
@@ -434,7 +419,7 @@ Deno.serve(async (request: Request) => {
     await updateRun(runId, credentials.key, {
       finished_at: new Date().toISOString(),
       status,
-      api_requests: SYMBOLS.length * timeframes.length + feeds.filter((f) => f.rawBars === 0).length,
+      api_requests: apiRequests,
       fetched_count: fetchedCount,
       inserted_count: insertedCount,
       updated_count: updatedCount,
@@ -489,7 +474,7 @@ Deno.serve(async (request: Request) => {
       runId,
       symbols: SYMBOLS,
       timeframes,
-      apiRequests: SYMBOLS.length * timeframes.length,
+      apiRequests,
       fetchedBars: fetchedCount,
       insertedCandles: insertedCount,
       updatedCandles: updatedCount,
