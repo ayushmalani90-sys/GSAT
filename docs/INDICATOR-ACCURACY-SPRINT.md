@@ -26,3 +26,18 @@ The analysis API requests up to 1,000 BiQuote candles for the selected timeframe
 ## Validation update
 
 The self-test suite now includes fixed golden outputs for EMA20/50/200, RSI14, MACD 12/26/9 and ATR14. It also verifies that changing only candle range (and therefore ATR) cannot change the directional confluence score. ATR remains visible in the volatility analysis but is excluded from directional scoring.
+
+
+## Advanced-module validation
+
+The preview route uses \`analyzeVerified\` for the selected timeframe and all four MTF panels. Its independent synthetic regression suite checks:
+- structural strength is invariant to current-price distance when the same pivot zones remain eligible;
+- Fibonacci uses a confirmed alternating swing and the documented ratios;
+- Volume Profile conserves source tick count while distributing it across candle price ranges and calculates a 70% value area;
+- zero tick volume does not create a fabricated POC;
+- bullish/bearish engulfing and bullish rejection are detected with geometry-based quality and invalidation;
+- missing EMA200 reduces EMA confluence weight and evidence coverage;
+- ATR-only range changes do not change directional confluence;
+- absence of a pattern is neutral price-action evidence.
+
+The tests do not certify triangle/breakout patterns, statistical signal quality, or two-year source-history availability. Those remain out of scope until separately implemented and validated.
