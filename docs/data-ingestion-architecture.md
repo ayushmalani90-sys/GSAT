@@ -44,8 +44,9 @@ The target is a rolling two years by `candle_open`. A daily retention job prunes
 **Collector sequence:**
 
 1. Start an ingestion-run record.
-2. Fetch the latest completed BiQuote 1m bars for XAUUSD and XAGUSD using a bounded overlap window (initially 5–10 minutes).
-3. Fetch native 15m, 1h, 4h and 1d bars only when a bar boundary has closed, and always allow a small overlap for late publication/correction.
+2. Read the latest stored candle timestamp for each symbol/timeframe. Request from that timestamp minus the timeframe-specific overlap to the current time.
+3. Limit each catch-up request to 900 bars (below BiQuote's 1,000-bar response cap). If the collector missed a longer period, advance the range by at most 900 bars; the next one-minute run continues from the newest stored candle until caught up. When a timeframe has no stored history, use the bounded recent-window request; use the explicit bootstrap mode only for the one-time default-history import.
+4. Fetch native 15m, 1h, 4h and 1d bars only when a bar boundary has closed, and always allow a small overlap for late publication/correction.
 4. Use BiQuote's documented `from` and `to` time-range parameters and respect its 1,000-bar maximum per response. Do not depend on undocumented cursor pagination.
 5. Normalize timestamps to UTC; validate finite positive OHLC values and OHLC ordering; reject open/incomplete bars.
 6. Upsert by `(symbol, timeframe, candle_open)`. Preserve `first_ingested_at`; refresh OHLC, volume fields and `last_ingested_at` on a source correction.
@@ -53,7 +54,7 @@ The target is a rolling two years by `candle_open`. A daily retention job prunes
 8. Update feed-health state and finish the run record.
 9. A separate daily task prunes rows older than two years only after successful validation.
 
-**Failure handling:** use bounded retries with backoff for transient HTTP failures; never mark a run successful if one symbol/timeframe silently failed. A partial result is recorded as `partial`. A subsequent run overlaps recent time ranges to repair delayed or missed bars.
+**Failure handling:** use bounded retries with backoff for transient HTTP failures; never mark a run successful if one symbol/timeframe silently failed. A partial result is recorded as `partial`; if every scheduled task fails, the run is `failed`. Each scheduled task starts from its latest stored candle, so the overlap repairs recent corrections and the 900-bar chunking catches up after missed runs.
 
 **Secrets:** BiQuote's documented read-only endpoints do not require a key. Keep the Supabase service-role key only in the Edge Function secret store; never put it in browser code, Git, SQL migrations, or public Vercel variables.
 
@@ -152,3 +153,10 @@ A one-time default-history bootstrap fetched 2,688 bars across both symbols and 
 
 
 **Incremental recovery test (validation, 2026-11-13):** one recent XAUUSD 1m candle was deliberately corrupted and one matching XAGUSD 1m candle was deleted in the validation database. The normal 1m collector was then invoked within its 12-minute overlap window. It corrected the XAUUSD row and reinserted the XAGUSD row. A fresh BiQuote request confirmed exact OHLC and tick-volume parity for both restored rows. No production data was touched.
+
+
+**Recovery extension (validation, 2026-11-13):** the collector was updated to query the latest stored timestamp per symbol/timeframe and advance in chunks of at most 900 bars. In a controlled test, the latest 20 1m candles were deleted for each symbol (40 rows total, creating a gap longer than the original 12-minute overlap). The normal scheduled collector restored all 40 rows in one run, with zero rejected bars. A fresh BiQuote comparison checked 33 completed bars per symbol (66 total) across the recovery window: zero missing rows and zero OHLC, volume or tick-volume mismatches. The collector also correctly classified a forced all-feed historical probe failure as `failed`, not `partial`; historical probes did not change the live feed-health state.
+
+**Indicator/database parity (validation, 2026-11-13):** EMA20/50/200, RSI14, MACD line/signal/histogram and ATR14 were independently recalculated from stored BiQuote candles for both symbols at 15m, 1h, 4h and 1d. All eight symbol/timeframe comparisons matched the existing preview analysis API exactly (zero absolute difference for every compared value). This verifies the stored native candle sets and these indicator outputs against the current BiQuote analysis path; it does not validate support/resistance, Fibonacci, volume profile or pattern detection parity.
+
+**Access control:** RLS is enabled on all three GSAT tables with no client-facing policies. Explicit privilege checks confirmed anon and authenticated roles cannot select candle data or execute the upsert RPC; service_role has the required table and RPC access.
