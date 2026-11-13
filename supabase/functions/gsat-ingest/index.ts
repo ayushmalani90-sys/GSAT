@@ -65,6 +65,15 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return difference === 0;
+}
+
 function finiteNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
@@ -323,6 +332,28 @@ Deno.serve(async (request: Request) => {
     }
   })();
   if ("error" in credentials) return json({ error: credentials.error }, 500);
+
+  const providedCronSecret = request.headers.get("x-gsat-cron-secret") ?? "";
+  if (!providedCronSecret) return json({ error: "Unauthorized" }, 401);
+
+  let expectedCronSecret: unknown;
+  try {
+    expectedCronSecret = await restRequest(
+      "rpc/gsat_get_ingestion_cron_secret",
+      "POST",
+      credentials.key,
+      {},
+    );
+  } catch {
+    return json({ error: "Ingestion authentication is not configured" }, 503);
+  }
+
+  if (
+    typeof expectedCronSecret !== "string" ||
+    !constantTimeEqual(providedCronSecret, expectedCronSecret)
+  ) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
   const now = new Date();
   const timeframes = selectedTimeframes(now);
