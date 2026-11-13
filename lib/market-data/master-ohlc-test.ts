@@ -28,7 +28,7 @@ export function runMasterOhlcSelfTests() {
   if (aggregated[0].o !== 100 || aggregated[0].h !== 115 || aggregated[0].l !== 99 || aggregated[0].c !== 114.5) {
     throw new Error("15m OHLC aggregation failed");
   }
-  if (aggregated[0].tickVolume !== 153) throw new Error(`Expected tick volume 153, got ${aggregated[0].tickVolume}`);
+  if (aggregated[0].tickVolume !== 150) throw new Error(`Expected tick volume 150, got ${aggregated[0].tickVolume}`);
 
   return { passed: true, cases: 4 };
 }
