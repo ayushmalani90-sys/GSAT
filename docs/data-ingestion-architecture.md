@@ -35,7 +35,7 @@ Prices use `double precision` to keep the candle table compact and align with th
 
 ### Retention
 
-The target is a rolling two years by `candle_open`. A daily retention job prunes candles older than two years. Ingestion-run diagnostics are retained for 30 days and pruned separately; keeping one run per minute for two years would create roughly 1.05 million log rows and waste the Free database quota. Retention jobs are active only in the validation project at this stage.
+The target is a rolling two years by `candle_open`. A daily retention job prunes candles older than two years. Ingestion-run diagnostics are retained for 7 days and pruned separately; keeping one run per minute for two years would create roughly 1.05 million log rows and waste the Free database quota. Retention jobs are active only in the validation project at this stage.
 
 ## 3. One-minute ingestion design
 
@@ -72,6 +72,8 @@ Backfill procedure:
 
 If BiQuote cannot supply two years for a particular interval, keep the database retention policy at two years but disclose the shorter source-available history. Do not fill the gap from another provider.
 
+**Observed BiQuote history probe (validation, 2026-11-13):** the documented `from`/`to` endpoint returned completed 1m bars for tested one-hour windows up to five hours before the probe time. It returned empty `bars` arrays for the six-hour-old window and for tested windows at 24 hours, 7 days, 30 days, 6 months, 1 year and 2 years. A two-year range probe across all five timeframes also returned no bars. This is not proof of the provider's absolute maximum history, but it is enough to reject a two-year backfill claim. Under the BiQuote-only rule, the database will build its two-year rolling history **forward from collector activation**; it cannot be populated with two years of historical candles today from the tested endpoint.
+
 ## 5. Free-tier capacity gate
 
 Two symbols × 1,051,200 minutes per two-year period = **2,102,400 potential 1m rows**, before adding the smaller native 15m/1h/4h/1d series, ingestion logs and indexes. Actual market closures reduce this count, but the free-tier database quota is still a constraint.
@@ -81,7 +83,7 @@ Before full backfill:
 - Measure actual table plus index size with PostgreSQL relation-size functions.
 - Extrapolate to the observed two-year row count.
 - Keep at least 20% of the database quota free for indexes, updates, operational tables and growth.
-- If the projection exceeds that headroom, stop. Do not silently shorten retention or drop the 1m series. Revisit the storage plan or retention decision with the owner first.
+- A server-side storage guard pauses ingestion at 400,000,000 database bytes (80% of the 500 MB Free quota). If the guard trips, stop and revisit storage/index design or the Supabase plan with the owner; do not silently shorten candle retention or drop the 1m series.
 
 The collector should expose row counts, bytes used, oldest candle, newest candle and retention horizon. Supabase Free has no production-grade automatic backup guarantee; arrange and test manual exports before treating this database as the sole historical store.
 
@@ -127,7 +129,7 @@ All gates must pass before merge to the production branch or production secrets/
 - [x] Activate the one-minute Cron schedule in the validation project only.
 - [x] Test live ingestion for both symbols and all five stored native timeframes.
 - [x] Verify repeat runs upsert existing candles without duplicates.
-- [x] Test the two-year candle retention and 30-day ingestion-log retention functions.
+- [x] Test the two-year candle retention and 7-day ingestion-log retention functions.
 - [ ] Run a representative historical sample/backfill and measure actual storage growth.
 - [ ] Run parity, continuity, idempotency and recovery tests.
 - [ ] Obtain explicit approval before connecting production or changing the production analysis route.
@@ -139,6 +141,8 @@ The separate Supabase Free validation project is active in the Mumbai region. Th
 
 The first live ingestion run stored 18 completed 1m candles from 20 returned BiQuote bars across XAUUSD and XAGUSD. The two open bars were excluded. A repeated run updated the same 18 rows and inserted zero duplicates. A forced all-timeframe validation run then ingested 1m, 15m, 1h, 4h and 1d data for both symbols with zero rejected bars and zero small gaps. A repeat run updated existing rows rather than duplicating them.
 
-The one-minute validation Cron is active. Daily candle pruning and 30-day ingestion-log pruning are also scheduled in the validation project. This does not constitute production approval.
+The one-minute validation Cron is active. Daily candle pruning and 7-day ingestion-log pruning are also scheduled in the validation project. This does not constitute production approval.
 
-The measured sample contains 40 candles with an average PostgreSQL heap row size of approximately 120 bytes. This is too small to validate a two-year storage projection. At the theoretical upper bound of 2,102,400 one-minute rows plus native higher-timeframe rows, raw tuple payload alone could be roughly 275 MB before indexes, ingestion logs, database overhead and WAL. The full historical backfill remains blocked until BiQuote's two-year source availability is probed and a larger sample provides a defensible storage projection with at least 20% quota headroom.
+The live table sample contains 622 candles with an average PostgreSQL heap row size of approximately 120 bytes. A separate temporary sizing test (not written to the real candle table) inserted 100,000 representative candle rows and 43,200 representative ingestion-run rows. It measured approximately 196.5 total bytes per candle row including heap and indexes, and approximately 791 bytes per diagnostic-run row. At the theoretical maximum of 2,287,820 candle rows across all five native intervals, candle storage alone projects to about 449.6 MB. Seven days of run logs project to about 8.0 MB; adding the current database baseline gives a worst-case continuous-minute estimate of roughly 469.5 MB, which exceeds the 400 MB headroom target. Real metal-market closures reduce that row count, but the active-session fraction has not yet been proven over a long sample. A server-side guard now pauses ingestion at 400 MB to protect the 500 MB Free quota.
+
+The BiQuote source probe found no candles for tested ranges older than five hours, including a two-year range across all intervals. Therefore no two-year backfill is being attempted. The two-year policy is a forward rolling retention target, which will take two years to accumulate.
