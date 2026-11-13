@@ -405,6 +405,59 @@ Deno.serve(async (request: Request) => {
     runId = runResult?.[0]?.id ?? null;
     if (!runId) throw new Error("Supabase did not return the ingestion run ID");
 
+    const storageRows = await restRequest(
+      "rpc/gsat_get_storage_usage",
+      "POST",
+      credentials.key,
+      {},
+    ) as Array<{
+      database_bytes: number;
+      candle_table_bytes: number;
+      ingestion_run_table_bytes: number;
+      candle_rows: number;
+    }>;
+    const storage = storageRows?.[0];
+    if (!storage) throw new Error("Supabase storage metrics were unavailable");
+
+    const storageGuardBytes = 400_000_000; // 80% of the 500 MB Free database quota.
+    if (Number(storage.database_bytes) >= storageGuardBytes) {
+      const message = "Storage guard paused ingestion at 400 MB. Review retention, indexing, and the Supabase plan before resuming.";
+      await updateRun(runId, credentials.key, {
+        finished_at: new Date().toISOString(),
+        status: "failed",
+        error_message: message,
+        details: { source: "BiQuote", storageGuard: true, storage },
+      });
+
+      const healthRows = await restRequest(
+        "gsat_market_data_health?select=consecutive_failures&id=eq.1",
+        "GET",
+        credentials.key,
+      ) as Array<{ consecutive_failures: number }>;
+      const previousFailures = Number(healthRows?.[0]?.consecutive_failures ?? 0);
+      await restRequest(
+        "gsat_market_data_health?id=eq.1",
+        "PATCH",
+        credentials.key,
+        {
+          last_attempt_at: runStart,
+          status: "degraded",
+          consecutive_failures: previousFailures + 1,
+          last_error: message,
+          updated_at: new Date().toISOString(),
+        },
+        "return=minimal",
+      );
+
+      return json({
+        status: "paused_storage_guard",
+        runId,
+        databaseBytes: Number(storage.database_bytes),
+        storageGuardBytes,
+        candleRows: Number(storage.candle_rows),
+      }, 507);
+    }
+
     const tasks = SYMBOLS.flatMap((symbol) =>
       timeframes.map((timeframe) => fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo)),
     );
