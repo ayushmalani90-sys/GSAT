@@ -25,3 +25,10 @@
 - ATR14: validate True Range plus Wilder RMA from the exact BiQuote candle set.
 
 A TradingView difference alone is not a failure when its underlying broker candles differ. A difference between two GSAT calculations using the same normalized candle set is a failure.
+
+
+## Current validation additions
+
+- A fixed 240-close synthetic golden fixture now checks EMA20/50/200, RSI14, MACD line/signal/histogram and ATR14 against constants produced by an independent Python reference implementation.
+- A confluence regression test varies candle range while holding closes fixed. Directional confluence must remain unchanged when only ATR volatility changes.
+- These tests validate formula implementation and seeding. They do not prove that BiQuote supplies a complete history or that a live source snapshot matches another provider.
