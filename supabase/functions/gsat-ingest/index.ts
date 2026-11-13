@@ -50,7 +50,7 @@ const INTERVAL_MS: Record<Timeframe, number> = {
   "1d": 86_400_000,
 };
 const OVERLAP_MS: Record<Timeframe, number> = {
-  "1m": 10 * 60_000,
+  "1m": 12 * 60_000,
   "15m": 60 * 60_000,
   "1h": 3 * 60 * 60_000,
   "4h": 12 * 60 * 60_000,
