@@ -34,17 +34,9 @@ export async function GET(request: Request) {
     });
     if (!pageResponse.ok) throw new Error("EV Trading Labs catalogue returned HTTP " + pageResponse.status);
     const html = await pageResponse.text();
-    const ldJsonBlocks = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
-      .map((match) => {
-        try { return JSON.parse(match[1]); } catch { return null; }
-      })
-      .filter(Boolean);
-    const distributions = ldJsonBlocks.flatMap((block) =>
-      Array.isArray(block.distribution) ? block.distribution : []
-    );
-    const url = distributions
-      .map((item: { contentUrl?: string }) => item.contentUrl)
-      .find((value: string | undefined) => value?.includes(`/${symbol}/${timeframe}/${year}.json.gz`));
+    const archiveUrls = [...html.matchAll(/https:\/\/evtradelabs\.com\/api\/simulator\/data\/[A-Z0-9]+\/[A-Z0-9]+\/\d{4}\.json\.gz/g)]
+      .map((match) => match[0]);
+    const url = archiveUrls.find((value) => value.includes(`/${symbol}/${timeframe}/${year}.json.gz`));
     if (!url) {
       return NextResponse.json({
         ok: false,
