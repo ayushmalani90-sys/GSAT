@@ -90,11 +90,11 @@ export async function GET(request: Request) {
 
   try {
     const [biquoteResponse, archiveResponse] = await Promise.all([
-      fetch(`https://biquote.io/api/${symbol}/ohlc?interval=${TIMEFRAMES[timeframe]}&limit=1000`, {
+      fetch(`https://biquote.io/api/${symbol}/ohlc?interval=${TIMEFRAMES[timeframe].biquote}&limit=1000`, {
         cache: "no-store",
         signal: AbortSignal.timeout(15_000),
       }),
-      fetch(`https://evtradelabs.com/api/simulator/data/${symbol}/${TIMEFRAMES[timeframe]}/${year}.json.gz`, {
+      fetch(`https://evtradelabs.com/api/simulator/data/${symbol}/${TIMEFRAMES[timeframe].ev}/${year}.json.gz`, {
         cache: "no-store",
         headers: { "User-Agent": "Mozilla/5.0 GSAT historical-source validation" },
         signal: AbortSignal.timeout(15_000),
