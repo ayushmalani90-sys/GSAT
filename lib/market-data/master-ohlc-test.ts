@@ -30,5 +30,17 @@ export function runMasterOhlcSelfTests() {
   }
   if (aggregated[0].tickVolume !== 150) throw new Error(`Expected tick volume 150, got ${aggregated[0].tickVolume}`);
 
-  return { passed: true, cases: 4 };
+  const guarded = normalizeMasterCandles([
+    { openTime: "2026-01-01T00:00:00Z", open: 100, high: 101, low: 99, close: 100, isOpen: false, volume: null, tickVolume: null },
+    { openTime: "2026-01-01T00:01:00Z", open: 100, high: 99, low: 98, close: 100, isOpen: false },
+    { openTime: "2026-01-01T00:02:00Z", open: 0, high: 101, low: 99, close: 100, isOpen: false },
+    { openTime: "2026-01-01T00:03:00Z", open: 100, high: 101, low: 99, close: 100, isOpen: true },
+    { openTime: "not-a-date", open: 100, high: 101, low: 99, close: 100, isOpen: false },
+  ], "XAUUSD");
+  if (guarded.length !== 1) throw new Error(`Expected malformed/open candles to be rejected, got ${guarded.length}`);
+  if (guarded[0].volume !== undefined || guarded[0].tickVolume !== undefined) {
+    throw new Error("Null volume values must remain missing, not be coerced to zero");
+  }
+
+  return { passed: true, cases: 7 };
 }
