@@ -4,6 +4,7 @@ import type { TechnicalCandle } from "../../../lib/technical";
 import { normalizeMasterCandles } from "../../../lib/market-data/master-ohlc";
 import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
 import { assessIndicatorHistory } from "../../../lib/indicator-quality";
+import { calculateIndependentIndicatorReference, compareCoreIndicatorValues, type CoreIndicatorValues } from "../../../lib/indicator-benchmark";
 
 type BiquoteTick = { symbol?: string; mid?: number; bid?: number; ask?: number; dayDiffPercent?: number; timestamp?: string; stale?: boolean; marketState?: string; quoteAgeSeconds?: number };
 type CandleResponse = { bars?: Array<Record<string, unknown>>; message?: string; nextCursor?: string; next_cursor?: string };
@@ -46,13 +47,30 @@ async function fetchBiquoteTick(symbol: SymbolCode) {
   return data;
 }
 
+function indicatorSnapshot(analysis: ReturnType<typeof analyzeVerified>): CoreIndicatorValues {
+  return {
+    ema20: analysis.ema.ema20,
+    ema50: analysis.ema.ema50,
+    ema200: analysis.ema.ema200,
+    rsi14: analysis.momentum.rsi14,
+    macd: analysis.momentum.macd,
+    macdSignal: analysis.momentum.macdSignal,
+    macdHistogram: analysis.momentum.macdHistogram,
+    atr14: analysis.volatility.atr14,
+  };
+}
+
 async function buildMtf(symbol: SymbolCode) {
-  const out: Record<string, ReturnType<typeof analyzeVerified>> = {};
-  for (const tf of TIMEFRAMES) {
-    const candles = await fetchHistory(symbol, TF_AGGREGATION[tf]);
-    out[tf] = analyzeVerified(candles);
+  const analyses: Record<string, ReturnType<typeof analyzeVerified>> = {};
+  const audits: Record<string, ReturnType<typeof compareCoreIndicatorValues>> = {};
+  for (const timeframe of TIMEFRAMES) {
+    const candles = await fetchHistory(symbol, TF_AGGREGATION[timeframe]);
+    const analysis = analyzeVerified(candles);
+    analyses[timeframe] = analysis;
+    const reference = calculateIndependentIndicatorReference(candles);
+    audits[timeframe] = compareCoreIndicatorValues(indicatorSnapshot(analysis), reference);
   }
-  return out;
+  return { analyses, audits };
 }
 
 function buildHistoryQuality(analysisByTimeframe: Record<string, ReturnType<typeof analyzeVerified>>) {
@@ -70,16 +88,22 @@ export async function GET(request: Request) {
   if (!(TIMEFRAMES as readonly string[]).includes(timeframeParam)) return NextResponse.json({ error: "Unsupported timeframe: " + timeframeParam }, { status: 400 });
   const timeframe = timeframeParam as Timeframe;
   try {
-    const [goldCandles, silverCandles, goldTick, silverTick, goldMtf, silverMtf] = await Promise.all([
+    const [goldCandles, silverCandles, goldTick, silverTick, goldMtfResult, silverMtfResult] = await Promise.all([
       fetchHistory("XAUUSD", TF_AGGREGATION[timeframe]),
       fetchHistory("XAGUSD", TF_AGGREGATION[timeframe]),
       fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
       buildMtf("XAUUSD"), buildMtf("XAGUSD"),
     ]);
     const gold = analyzeVerified(goldCandles), silver = analyzeVerified(silverCandles);
+    const goldMtf = goldMtfResult.analyses;
+    const silverMtf = silverMtfResult.analyses;
     const historyQuality = {
       gold: buildHistoryQuality(goldMtf),
       silver: buildHistoryQuality(silverMtf),
+    };
+    const calculationAudit = {
+      gold: goldMtfResult.audits,
+      silver: silverMtfResult.audits,
     };
     const sourceMode = "biquote-native-timeframe";
     return NextResponse.json({
@@ -89,6 +113,7 @@ export async function GET(request: Request) {
       feed: { gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" }, silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" } },
       history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, target: MAX_CANDLES },
       historyQuality,
+      calculationAudit,
       gold: { intraday: gold }, silver: { intraday: silver },
       mtf: { gold: goldMtf, silver: silverMtf },
       methodology: {
@@ -98,6 +123,7 @@ export async function GET(request: Request) {
         dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.",
         display: "TradingView OANDA widgets remain display-only. No OANDA API is used.",
         historyQuality: "The response distinguishes minimum formula history from recommended warm-up targets. EMA200 is unavailable below 200 completed candles; recommended warm-up is not a prediction-accuracy guarantee.",
+        calculationAudit: "Core indicators are checked against a separate reference implementation using the same normalized candle input. This verifies formula parity, not parity with a different broker feed or trading performance.",
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
