@@ -140,6 +140,22 @@ The compressed files total approximately 1.5 MB for both metals across all four 
 
 The data is Dukascopy-derived, not BiQuote. A preview-only `/api/validation/source-parity` endpoint compares exact common UTC candle timestamps and tests BiQuote against EV bid, ask and midpoint constructions. For 2025, only daily data overlaps the current BiQuote daily history; 2025 intraday files do not overlap BiQuote's 2026-only intraday history. Current-year EV files require a free account, so intraday source parity remains unverified.
 
+Daily source comparison on the 231 exact common UTC timestamps from 2025-04-06 through 2025-12-31:
+
+| Metric | XAUUSD | XAGUSD |
+|---|---:|---:|
+| Best matching EV price basis | Mid | Mid |
+| Mean absolute close difference | $0.288 | $0.0217 |
+| Maximum absolute close difference | $16.345 | $0.4595 |
+| EMA20 absolute difference | $0.0197 | $0.00056 |
+| EMA50 absolute difference | $0.0079 | $0.00666 |
+| EMA200 absolute difference | $0.0950 | $0.01384 |
+| RSI14 absolute difference | 0.050 | 0.054 |
+| MACD line absolute difference | 0.075 | 0.0034 |
+| ATR14 absolute difference | $0.271 | $0.129 |
+
+The midpoint is the closest daily price construction for both metals. Indicator values are close on this aligned daily sample, but individual OHLC outliers are material: the largest gold close difference is $16.345 on 2025-06-20, and the largest silver close difference is $0.4595 on 2025-10-13. This is not a 99.99% feed-parity result and does not validate 15m, 1H or 4H. The large outliers must be reviewed before using this feed as a historical seed.
+
 A direct serverless attempt using the Dukascopy Node downloader returned HTTP 202 from the upstream feed. That downloader route and dependency were removed; the verified EV archive files are now used for the separate QA comparison.
 
 ## Lowest-cost managed API alternative
