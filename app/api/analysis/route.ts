@@ -3,6 +3,7 @@ import { analyzeVerified } from "../../../lib/technical-advanced";
 import type { TechnicalCandle } from "../../../lib/technical";
 import { normalizeMasterCandles } from "../../../lib/market-data/master-ohlc";
 import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
+import { assessIndicatorHistory } from "../../../lib/indicator-quality";
 
 type BiquoteTick = { symbol?: string; mid?: number; bid?: number; ask?: number; dayDiffPercent?: number; timestamp?: string; stale?: boolean; marketState?: string; quoteAgeSeconds?: number };
 type CandleResponse = { bars?: Array<Record<string, unknown>>; message?: string; nextCursor?: string; next_cursor?: string };
@@ -54,6 +55,15 @@ async function buildMtf(symbol: SymbolCode) {
   return out;
 }
 
+function buildHistoryQuality(analysisByTimeframe: Record<string, ReturnType<typeof analyzeVerified>>) {
+  return Object.fromEntries(
+    TIMEFRAMES.map((timeframe) => [
+      timeframe,
+      assessIndicatorHistory(analysisByTimeframe[timeframe]?.samples ?? 0),
+    ]),
+  );
+}
+
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const timeframeParam = params.get("timeframe") ?? "1H";
@@ -67,6 +77,10 @@ export async function GET(request: Request) {
       buildMtf("XAUUSD"), buildMtf("XAGUSD"),
     ]);
     const gold = analyzeVerified(goldCandles), silver = analyzeVerified(silverCandles);
+    const historyQuality = {
+      gold: buildHistoryQuality(goldMtf),
+      silver: buildHistoryQuality(silverMtf),
+    };
     const sourceMode = "biquote-native-timeframe";
     return NextResponse.json({
       source: ANALYSIS_SOURCE_POLICY.liveQuotes,
@@ -74,6 +88,7 @@ export async function GET(request: Request) {
       generatedAt: new Date().toISOString(), timeframe,
       feed: { gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" }, silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" } },
       history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, target: MAX_CANDLES },
+      historyQuality,
       gold: { intraday: gold }, silver: { intraday: silver },
       mtf: { gold: goldMtf, silver: silverMtf },
       methodology: {
@@ -82,6 +97,7 @@ export async function GET(request: Request) {
         advanced: "Structural zones use confirmed pivots and distance-independent strength; Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile distributes broker/tick volume across candle ranges and calculates a 70% value area; candlestick quality is geometric and not a win probability.",
         dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.",
         display: "TradingView OANDA widgets remain display-only. No OANDA API is used.",
+        historyQuality: "The response distinguishes minimum formula history from recommended warm-up targets. EMA200 is unavailable below 200 completed candles; recommended warm-up is not a prediction-accuracy guarantee.",
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
