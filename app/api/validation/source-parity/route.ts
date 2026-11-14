@@ -15,6 +15,7 @@ type SymbolCode = "XAUUSD" | "XAGUSD";
 type Basis = "bid" | "ask" | "mid";
 
 function finite(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -157,6 +158,12 @@ export async function GET(request: Request) {
         biquoteBars: biquote.length,
         evTradingLabsBars: evByBasis.bid.length,
         exactTimestampMatches: 0,
+        timestampCoverage: {
+          biquote: biquote.length ? { from: biquote[0].t, to: biquote[biquote.length - 1].t } : null,
+          evTradingLabs: evByBasis.bid.length
+            ? { from: evByBasis.bid[0].t, to: evByBasis.bid[evByBasis.bid.length - 1].t }
+            : null,
+        },
         commonWindow: null,
         ohlcDifference: null,
         indicatorDifference: null,
@@ -193,11 +200,23 @@ export async function GET(request: Request) {
     const bestBasis = (Object.keys(meanClose) as Basis[])
       .filter((basis) => meanClose[basis] != null)
       .sort((a, b) => meanClose[a]! - meanClose[b]!)[0] ?? null;
-    const biquoteIndicators = snapshot(alignedBiQuote);
+    // Compare indicator values at the last common candle using each provider's
+    // complete native history up to that instant. Computing indicators on the
+    // timestamp intersection would silently drop provider-only candles and
+    // change EMA/RSI/MACD/ATR paths.
+    const lastCommonTime = commonTimes[commonTimes.length - 1];
+    const lastCommonTimestamp = Date.parse(lastCommonTime);
+    const biquoteAtCommonEnd = biquote.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp);
+    const evAtCommonEnd = {
+      bid: evByBasis.bid.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp),
+      ask: evByBasis.ask.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp),
+      mid: evByBasis.mid.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp),
+    };
+    const biquoteIndicators = snapshot(biquoteAtCommonEnd);
     const evIndicators = {
-      bid: snapshot(alignedEv.bid),
-      ask: snapshot(alignedEv.ask),
-      mid: snapshot(alignedEv.mid),
+      bid: snapshot(evAtCommonEnd.bid),
+      ask: snapshot(evAtCommonEnd.ask),
+      mid: snapshot(evAtCommonEnd.mid),
     };
 
     return NextResponse.json({
@@ -222,6 +241,12 @@ export async function GET(request: Request) {
       bestMatchingEVPriceBasisByMeanCloseDifference: bestBasis,
       ohlcDifference,
       largestMidCloseDifferences,
+      indicatorComparisonWindow: {
+        asOf: lastCommonTime,
+        biquoteNativeBarsUsed: biquoteAtCommonEnd.length,
+        evNativeBarsUsed: evAtCommonEnd.mid.length,
+        note: "Indicators are calculated on each provider's complete native candle sequence through the last exact common timestamp; OHLC differences use exact timestamp intersections only.",
+      },
       indicatorDifference: {
         ema20: { biquote: biquoteIndicators.ema20, evBid: evIndicators.bid.ema20, evAsk: evIndicators.ask.ema20, evMid: evIndicators.mid.ema20 },
         ema50: { biquote: biquoteIndicators.ema50, evBid: evIndicators.bid.ema50, evAsk: evIndicators.ask.ema50, evMid: evIndicators.mid.ema50 },
