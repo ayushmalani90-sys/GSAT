@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const symbol = (params.get("symbol") ?? "XAUUSD").toUpperCase();
   const timeframe = (params.get("timeframe") ?? "M15").toUpperCase();
-  const year = Number(params.get("year") ?? "2025");
+  const year = Number(params.get("year") ?? "2026");
   if (!SYMBOLS.includes(symbol as (typeof SYMBOLS)[number])) {
     return NextResponse.json({ error: "symbol must be XAUUSD or XAGUSD" }, { status: 400 });
   }
