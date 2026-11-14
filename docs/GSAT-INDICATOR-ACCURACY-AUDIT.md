@@ -18,13 +18,13 @@
 
 ### 1. Preview regression suite
 
-The preview self-test endpoint returned HTTP 200. The existing suite passed 33 checks:
+The preview self-test endpoint returned HTTP 200. Before the history-readiness and independent-benchmark additions, the suite passed 33 checks:
 - Master OHLC normalization: 4
 - Core indicator regressions: 11
 - Advanced indicator regressions: 10
 - Independent BiQuote indicator golden vectors: 8
 
-These are deterministic regression tests. They are not market-prediction accuracy tests.
+The new additions contribute another 16 deterministic checks: 8 history-readiness boundary cases and 8 independent-benchmark golden cases. The combined suite must pass 49 checks before this PR is considered ready. These are deterministic regression tests, not market-prediction accuracy tests.
 
 ### 2. Persisted candle quality
 
@@ -73,6 +73,17 @@ Across all eight metal/timeframe combinations:
 **Maximum observed absolute difference: 0** for every available comparison in this snapshot.
 
 This is strong evidence that the formula implementation and persisted candle calculations agree for the tested snapshot. It does not prove future feed integrity, full historical continuity, parity with another broker's different price feed, or profitable signals.
+
+### 5. Live independent calculation audit
+
+The analysis API now exposes `calculationAudit` for both metals and all four timeframes. It calculates a second set of EMA, RSI, MACD and ATR values with a separate implementation on the same normalized BiQuote candle input, then reports:
+- actual and reference values;
+- absolute differences;
+- matched, mismatched and unavailable counts;
+- maximum absolute difference;
+- pass/incomplete/fail status.
+
+The audit does not treat an indicator unavailable on both implementations as a formula mismatch. The history-readiness report separately flags the missing history.
 
 ## Accuracy interpretation
 
