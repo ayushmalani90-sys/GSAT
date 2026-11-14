@@ -127,7 +127,7 @@ export async function GET(request: Request) {
       retryCount: 2,
       pauseBetweenRetriesMs: 500,
       useCache: false,
-    }) as Array<Record<string, unknown>>;
+    }) as unknown as Array<Record<string, unknown>>;
 
     const dukascopyCandles = rawDukascopy
       .map((bar) => cleanCandle(bar, "Dukascopy"))
