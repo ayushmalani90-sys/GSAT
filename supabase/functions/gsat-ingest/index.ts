@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 type SymbolCode = "XAUUSD" | "XAGUSD";
-type Timeframe = "1m" | "15m" | "1h" | "4h" | "1d";
+type Timeframe = "15m" | "1h" | "4h" | "1d";
 
 type BiQuoteBar = {
   openTime?: unknown;
@@ -38,19 +38,18 @@ type FeedResult = {
   rejectedBars: number;
   gapCount: number;
   marketClosed: boolean;
+  historicalRangeEmpty?: boolean;
   error?: string;
 };
 
 const SYMBOLS: SymbolCode[] = ["XAUUSD", "XAGUSD"];
 const INTERVAL_MS: Record<Timeframe, number> = {
-  "1m": 60_000,
   "15m": 900_000,
   "1h": 3_600_000,
   "4h": 14_400_000,
   "1d": 86_400_000,
 };
 const OVERLAP_MS: Record<Timeframe, number> = {
-  "1m": 12 * 60_000,
   "15m": 60 * 60_000,
   "1h": 3 * 60 * 60_000,
   "4h": 12 * 60 * 60_000,
@@ -82,7 +81,7 @@ function finiteNumber(value: unknown): number | null {
 }
 
 function selectedTimeframes(now: Date): Timeframe[] {
-  const result: Timeframe[] = ["1m"];
+  const result: Timeframe[] = [];
   const minuteOfEpoch = Math.floor(now.getTime() / 60_000);
   const minuteOfDay = now.getUTCHours() * 60 + now.getUTCMinutes();
 
@@ -195,6 +194,7 @@ async function fetchFeed(
   rangeFrom?: string,
   rangeTo?: string,
   fullHistory = false,
+  historicalProbe = false,
 ): Promise<FeedResult> {
   const url = new URL(BIQUOTE_BASE + "/" + symbol + "/ohlc");
   url.searchParams.set("interval", timeframe);
@@ -212,6 +212,9 @@ async function fetchFeed(
     throw new Error("BiQuote response did not contain a bars array: " + String(payload.message ?? "unknown response"));
   }
   if (payload.bars.length === 0) {
+    if (historicalProbe) {
+      return { symbol, timeframe, rows: [], rawBars: 0, openBarsExcluded: 0, rejectedBars: 0, gapCount: 0, marketClosed: false, historicalRangeEmpty: true };
+    }
     const marketState = await getMarketState(symbol, onRequest);
     if (marketState === "closed") {
       return { symbol, timeframe, rows: [], rawBars: 0, openBarsExcluded: 0, rejectedBars: 0, gapCount: 0, marketClosed: true };
@@ -400,13 +403,20 @@ Deno.serve(async (request: Request) => {
   } catch {
     // Cron sends an empty JSON object; an absent body uses the scheduled intervals.
   }
-  const allowedTimeframes: Timeframe[] = ["1m", "15m", "1h", "4h", "1d"];
-  const forced = Array.isArray(requestBody.forceTimeframes)
-    ? [...new Set(requestBody.forceTimeframes.filter((value): value is Timeframe =>
+  const allowedTimeframes: Timeframe[] = ["15m", "1h", "4h", "1d"];
+  const hasForcedTimeframes = Array.isArray(requestBody.forceTimeframes);
+  const forced = hasForcedTimeframes
+    ? [...new Set(requestBody.forceTimeframes!.filter((value): value is Timeframe =>
         typeof value === "string" && allowedTimeframes.includes(value as Timeframe)
       ))]
     : [];
-  const timeframes = forced.length > 0 ? forced : selectedTimeframes(now);
+  if (hasForcedTimeframes && forced.length === 0) {
+    return json({ error: "forceTimeframes must include one of 15m, 1h, 4h or 1d" }, 400);
+  }
+  const timeframes = hasForcedTimeframes ? forced : selectedTimeframes(now);
+  if (timeframes.length === 0) {
+    return json({ status: "skipped_no_completed_interval", timeframes: [] });
+  }
   const bootstrap = requestBody.bootstrap === true;
   const rangeFrom = typeof requestBody.from === "string" ? requestBody.from : undefined;
   const rangeTo = typeof requestBody.to === "string" ? requestBody.to : undefined;
@@ -501,7 +511,7 @@ Deno.serve(async (request: Request) => {
     const tasks = SYMBOLS.flatMap((symbol) =>
       timeframes.map(async (timeframe) => {
         if (rangeFrom && rangeTo) {
-          return fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo, false);
+          return fetchFeed(symbol, timeframe, now, countRequest, rangeFrom, rangeTo, false, true);
         }
         if (bootstrap) {
           return fetchFeed(symbol, timeframe, now, countRequest, undefined, undefined, true);
@@ -513,7 +523,7 @@ Deno.serve(async (request: Request) => {
         }
 
         // Start at the last stored candle minus overlap. If the scheduler was offline,
-        // advance at most 900 bars per run and let the next minute continue the catch-up.
+        // advance at most 900 bars per run and let the next scheduled run continue the catch-up.
         const catchup = scheduledCatchupRange(latestStored, timeframe, now);
         return fetchFeed(
           symbol,
@@ -581,13 +591,13 @@ Deno.serve(async (request: Request) => {
 
     const latestBySymbol = SYMBOLS.map((symbol) => {
       const latest = feeds
-        .filter((feed) => feed.symbol === symbol && feed.timeframe === "1m")
+        .filter((feed) => feed.symbol === symbol && feed.timeframe === "15m")
         .flatMap((feed) => feed.rows.map((row) => row.candle_open))
         .sort()
         .at(-1);
       return latest ?? null;
     });
-    const commonLatest1m = latestBySymbol.every(Boolean)
+    const commonLatest15m = latestBySymbol.every(Boolean)
       ? latestBySymbol.map((value) => Date.parse(value!)).reduce((a, b) => Math.min(a, b))
       : null;
 
@@ -615,6 +625,7 @@ Deno.serve(async (request: Request) => {
           rejectedBars: feed.rejectedBars,
           gapCount: feed.gapCount,
           marketClosed: feed.marketClosed,
+          historicalRangeEmpty: feed.historicalRangeEmpty ?? false,
         })),
         errors,
       },
@@ -637,8 +648,8 @@ Deno.serve(async (request: Request) => {
         updated_at: new Date().toISOString(),
       };
       if (!allFailed) healthPatch.last_success_at = new Date().toISOString();
-      if (commonLatest1m !== null) {
-        healthPatch.latest_closed_1m_candle_at = new Date(commonLatest1m).toISOString();
+      if (commonLatest15m !== null) {
+        healthPatch.latest_closed_15m_candle_at = new Date(commonLatest15m).toISOString();
       }
   
       await restRequest(
@@ -664,7 +675,7 @@ Deno.serve(async (request: Request) => {
       updatedCandles: updatedCount,
       rejectedBars: rejectedCount,
       smallGaps: gapCount,
-      latestClosed1mCandleAt: commonLatest1m === null ? null : new Date(commonLatest1m).toISOString(),
+      latestClosed15mCandleAt: commonLatest15m === null ? null : new Date(commonLatest15m).toISOString(),
       errors,
     }, status === "failed" ? 502 : 200);
   } catch (error) {
