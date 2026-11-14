@@ -112,7 +112,7 @@ These recommendations are engineering guidance, not hard mathematical requiremen
 
 ## BiQuote historical range probes
 
-BiQuote's public OHLC documentation supports `from`/`to` date ranges and a maximum of 1,000 bars per response. However, actual bounded-range probes for XAUUSD and XAGUSD returned:
+BiQuote's public OHLC documentation supports `from`/`to` date ranges and a maximum of 1,000 bars per response. Actual bounded-range probes for XAUUSD and XAGUSD returned:
 
 | Requested UTC range | 15m | 1H | 4H | 1D |
 |---|---:|---:|---:|---:|
@@ -121,9 +121,30 @@ BiQuote's public OHLC documentation supports `from`/`to` date ranges and a maxim
 | 2026-09-01 to 2026-10-01 | — | — | 0 | — |
 | 2025-01-01 to 2025-03-01 | — | — | — | 0 |
 
-A zero-row historical response is now recorded as `historicalRangeEmpty: true` and `marketClosed: false`; an empty old range is not evidence that the market was closed. The range probes were validation-only and did not mix external data into the BiQuote candle table.
+A zero-row historical response is now recorded as `historicalRangeEmpty: true` and `marketClosed: false`; an empty old range is not evidence that the market was closed. These probes did not insert external data into the BiQuote candle table.
 
 The results do not support a claim that BiQuote can currently supply 1,000 historical candles for every required timeframe. The current direct preview counts remain 192 × 15m, 168 × 1H, 180 × 4H and 499 × 1D per metal.
+
+## Free external archive verified
+
+EV Trading Labs publishes historical XAUUSD and XAGUSD files derived from Dukascopy tick data. Closed-year files through 2025 are downloadable without an account; the current-year 2026 files require a free account. The files contain bid and ask OHLC, volume and Unix UTC opening timestamps.
+
+Successfully downloaded and decompressed all eight 2025 symbol/timeframe files in the Vercel preview:
+
+| Metal | 15m rows | 1H rows | 4H rows | 1D rows |
+|---|---:|---:|---:|---:|
+| XAUUSD | 23,638 | 5,913 | 1,599 | 312 |
+| XAGUSD | 23,638 | 5,913 | 1,599 | 312 |
+
+The compressed files total approximately 1.5 MB for both metals across all four timeframes for 2025. The 2025 archive has enough bars for EMA200 on the intraday timeframes. Daily EMA200 is calculable with 312 bars, but a 1,000-bar daily warm-up requires roughly four years.
+
+The data is Dukascopy-derived, not BiQuote. A preview-only `/api/validation/source-parity` endpoint compares exact common UTC candle timestamps and tests BiQuote against EV bid, ask and midpoint constructions. For 2025, only daily data overlaps the current BiQuote daily history; 2025 intraday files do not overlap BiQuote's 2026-only intraday history. Current-year EV files require a free account, so intraday source parity remains unverified.
+
+A direct serverless attempt using the Dukascopy Node downloader returned HTTP 202 from the upstream feed. That downloader route and dependency were removed; the verified EV archive files are now used for the separate QA comparison.
+
+## Lowest-cost managed API alternative
+
+MetalCharts documents a Starter plan at $9/month with one year of intraday history (15m through 8H), one year of daily history and 10,000 monthly request weight. Historical calls cost 2 weight. Its free tier is daily-only for 30 days, so it cannot provide the required intraday history without a paid plan. This is a separate feed from BiQuote and still requires a source-parity test.
 
 ## One-minute collection removed from validation
 
@@ -144,24 +165,14 @@ Validation candle rows after removal:
 
 This change is isolated to the validation Supabase project. Production collector and production database were not changed.
 
-## External historical source candidates
+## Integration gate
 
-### Free candidate: Dukascopy
+Do not concatenate EV/Dukascopy history with BiQuote candles yet. The current-year EV files need free-account access to compare the same 2026 intraday timestamps. Once those files are available, compare OHLC on identical timestamps and price basis before deciding whether to:
+1. Keep BiQuote and accept its current history limits while new candles accumulate.
+2. Use EV/Dukascopy as the complete OHLC calculation source, keeping BiQuote live spot cards separate.
+3. Use external data only as a labelled historical warm-up seed if measured overlap differences are small and the indicator values converge.
 
-The public Dukascopy historical feed, accessed through the open-source `dukascopy-node` downloader, lists daily XAUUSD and XAGUSD candles back to June 1999 and 15m, 1H and 4H candles from May 2003. It is a different broker feed and its default candle price side is bid, whereas GSAT's BiQuote series has its own feed and price construction. It is suitable for a separately stored reference/seed dataset, not for silent concatenation with BiQuote candles.
-
-### Low-cost managed API: MetalCharts
-
-MetalCharts documents a Starter plan at $9/month with one year of intraday history (15m through 8H) and long daily history for metals. Its free tier is daily-only and limited to 30 days. It is easier to integrate as a REST API but remains a separate source from BiQuote.
-
-### Integration gate
-
-Do not mix Dukascopy or MetalCharts history into the BiQuote indicator series yet. First compare overlapping 15m, 1H, 4H and 1D bars using identical UTC candle boundaries and bid/ask/mid basis. Only after quantifying OHLC differences should we choose one of these paths:
-1. Keep BiQuote for all calculations and accept that EMA200 is unavailable on 15m, 1H and 4H until enough BiQuote bars accumulate.
-2. Use an external feed for the entire OHLC calculation series, while keeping the source clearly labelled and preserving BiQuote live spot cards only if the price-basis mismatch is acceptable.
-3. Use external history only as an indicator warm-up seed, explicitly labelled as mixed-source and validated for convergence against the subsequent BiQuote-only series.
-
-None of these paths creates a 99% or 99.99% prediction-accuracy guarantee. Formula parity, source parity and trading-signal performance remain separate tests.
+No external history has been inserted into the BiQuote candle table. Formula parity, source parity and signal performance remain separate. None of these changes supports a 99% or 99.99% prediction-accuracy claim.
 
 ## Not changed
 
