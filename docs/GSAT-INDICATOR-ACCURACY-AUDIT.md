@@ -148,7 +148,7 @@ This change is isolated to the validation Supabase project. Production collector
 
 ### Free candidate: Dukascopy
 
-The public Dukascopy historical feed, accessed through the open-source `dukascopy-node` downloader, lists XAUUSD and XAGUSD data back to 1999, including 15m, 1H, 4H and daily candles. It is a different broker feed and its default candle price side is bid, whereas GSAT's BiQuote series has its own feed and price construction. It is suitable for a separately stored reference/seed dataset, not for silent concatenation with BiQuote candles.
+The public Dukascopy historical feed, accessed through the open-source `dukascopy-node` downloader, lists daily XAUUSD and XAGUSD candles back to June 1999 and 15m, 1H and 4H candles from May 2003. It is a different broker feed and its default candle price side is bid, whereas GSAT's BiQuote series has its own feed and price construction. It is suitable for a separately stored reference/seed dataset, not for silent concatenation with BiQuote candles.
 
 ### Low-cost managed API: MetalCharts
 
