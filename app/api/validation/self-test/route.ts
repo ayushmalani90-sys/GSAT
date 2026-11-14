@@ -3,6 +3,7 @@ import { runIndicatorSelfTests } from "../../../../lib/technical-tests";
 import { runAdvancedIndicatorTests } from "../../../../lib/technical-advanced-tests";
 import { runMasterOhlcSelfTests } from "../../../../lib/market-data/master-ohlc-test";
 import { runBiquoteIndicatorTests } from "../../../../lib/biquote-indicator-tests";
+import { runIndicatorQualityTests } from "../../../../lib/indicator-quality-tests";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,11 @@ export async function GET() {
     const indicators = runIndicatorSelfTests();
     const advanced = runAdvancedIndicatorTests();
     const biquote = runBiquoteIndicatorTests();
-    return NextResponse.json({ ok: true, masterOhlc, indicators, advanced, biquote }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const historyQuality = runIndicatorQualityTests();
+    return NextResponse.json(
+      { ok: true, masterOhlc, indicators, advanced, biquote, historyQuality },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "GSAT self-test failed" },
