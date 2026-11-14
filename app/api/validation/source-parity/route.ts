@@ -1,47 +1,33 @@
 import { NextResponse } from "next/server";
-import { getHistoricalRates } from "dukascopy-node";
+import { gunzipSync } from "node:zlib";
 import { analyze, type TechnicalCandle } from "../../../../lib/technical";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const TIMEFRAMES = {
-  "15m": { biquote: "15m", dukascopy: "m15" },
-  "1H": { biquote: "1h", dukascopy: "h1" },
-  "4H": { biquote: "4h", dukascopy: "h4" },
-  "1D": { biquote: "1d", dukascopy: "d1" },
+  "15m": "M15",
+  "1H": "H1",
+  "4H": "H4",
+  "1D": "D1",
 } as const;
-
 type SymbolCode = "XAUUSD" | "XAGUSD";
+type Basis = "bid" | "ask" | "mid";
 
 function finite(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
 
-function cleanCandle(raw: Record<string, unknown>, source: "BiQuote" | "Dukascopy"): TechnicalCandle | null {
-  const timestamp = source === "BiQuote"
-    ? Date.parse(String(raw.openTime ?? raw.t ?? ""))
-    : finite(raw.timestamp);
-  const o = finite(source === "BiQuote" ? raw.open : raw.open);
-  const h = finite(raw.high);
-  const l = finite(raw.low);
-  const c = finite(raw.close);
-  if (
-    timestamp == null || !Number.isFinite(timestamp) ||
-    o == null || h == null || l == null || c == null ||
-    o <= 0 || h <= 0 || l <= 0 || c <= 0 ||
-    h < Math.max(o, c, l) || l > Math.min(o, c, h)
-  ) return null;
+function metric(a: number | null, b: number | null) {
   return {
-    t: new Date(timestamp).toISOString(),
-    o, h, l, c,
-    volume: finite(raw.volume) ?? undefined,
-    tickVolume: finite(raw.tickVolume) ?? undefined,
+    biquote: a,
+    evTradingLabs: b,
+    absoluteDifference: a == null || b == null ? null : Math.abs(a - b),
   };
 }
 
-function indicatorSnapshot(candles: TechnicalCandle[]) {
+function snapshot(candles: TechnicalCandle[]) {
   const a = analyze(candles);
   return {
     samples: a.samples,
@@ -56,155 +42,178 @@ function indicatorSnapshot(candles: TechnicalCandle[]) {
   };
 }
 
-function difference(a: number | null, b: number | null) {
+function summarizeDiff(barsA: TechnicalCandle[], barsB: TechnicalCandle[]) {
+  const diffs = { open: [] as number[], high: [] as number[], low: [] as number[], close: [] as number[] };
+  for (let i = 0; i < barsA.length; i += 1) {
+    diffs.open.push(Math.abs(barsA[i].o - barsB[i].o));
+    diffs.high.push(Math.abs(barsA[i].h - barsB[i].h));
+    diffs.low.push(Math.abs(barsA[i].l - barsB[i].l));
+    diffs.close.push(Math.abs(barsA[i].c - barsB[i].c));
+  }
+  const mean = (xs: number[]) => xs.length ? xs.reduce((sum, n) => sum + n, 0) / xs.length : null;
+  const max = (xs: number[]) => xs.length ? Math.max(...xs) : null;
   return {
-    biquote: a,
-    dukascopy: b,
-    absoluteDifference: a == null || b == null ? null : Math.abs(a - b),
+    meanAbsolute: {
+      open: mean(diffs.open),
+      high: mean(diffs.high),
+      low: mean(diffs.low),
+      close: mean(diffs.close),
+    },
+    maxAbsolute: {
+      open: max(diffs.open),
+      high: max(diffs.high),
+      low: max(diffs.low),
+      close: max(diffs.close),
+    },
   };
 }
 
 export async function GET(request: Request) {
-  // This is a preview-only QA route. Never expose an unauthenticated source
-  // comparison endpoint from the production deployment.
   if (process.env.VERCEL_ENV === "production") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
   const params = new URL(request.url).searchParams;
   const symbol = (params.get("symbol") ?? "XAUUSD").toUpperCase() as SymbolCode;
-  const timeframe = (params.get("timeframe") ?? "15m") as keyof typeof TIMEFRAMES;
+  const timeframe = (params.get("timeframe") ?? "1D") as keyof typeof TIMEFRAMES;
+  const year = Number(params.get("year") ?? "2025");
   if (symbol !== "XAUUSD" && symbol !== "XAGUSD") {
     return NextResponse.json({ error: "symbol must be XAUUSD or XAGUSD" }, { status: 400 });
   }
   if (!(timeframe in TIMEFRAMES)) {
     return NextResponse.json({ error: "timeframe must be 15m, 1H, 4H or 1D" }, { status: 400 });
   }
+  if (!Number.isInteger(year) || year < 2003 || year > 2025) {
+    return NextResponse.json({
+      error: "Public EV archive files are available for closed years through 2025; current-year 2026 files require a free account.",
+    }, { status: 403 });
+  }
 
   try {
-    const spec = TIMEFRAMES[timeframe];
-    const biquoteUrl = new URL("https://biquote.io/api/" + symbol + "/ohlc");
-    biquoteUrl.searchParams.set("interval", spec.biquote);
-    biquoteUrl.searchParams.set("limit", "1000");
-    const biquoteResponse = await fetch(biquoteUrl, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!biquoteResponse.ok) {
-      throw new Error("BiQuote OHLC request failed with HTTP " + biquoteResponse.status);
-    }
+    const [biquoteResponse, archiveResponse] = await Promise.all([
+      fetch(`https://biquote.io/api/${symbol}/ohlc?interval=${TIMEFRAMES[timeframe]}&limit=1000`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(15_000),
+      }),
+      fetch(`https://evtradelabs.com/api/simulator/data/${symbol}/${TIMEFRAMES[timeframe]}/${year}.json.gz`, {
+        cache: "no-store",
+        headers: { "User-Agent": "Mozilla/5.0 GSAT historical-source validation" },
+        signal: AbortSignal.timeout(15_000),
+      }),
+    ]);
+    if (!biquoteResponse.ok) throw new Error("BiQuote returned HTTP " + biquoteResponse.status);
+    if (!archiveResponse.ok) throw new Error("EV Trading Labs archive returned HTTP " + archiveResponse.status);
+
     const biquotePayload = await biquoteResponse.json() as { bars?: Array<Record<string, unknown>> };
     if (!Array.isArray(biquotePayload.bars)) throw new Error("BiQuote response did not contain bars");
-
-    const biquoteCandles = biquotePayload.bars
+    const biquote = biquotePayload.bars
       .filter((bar) => bar.isOpen === false)
-      .map((bar) => cleanCandle(bar, "BiQuote"))
+      .map((bar) => {
+        const t = Date.parse(String(bar.openTime ?? ""));
+        const o = finite(bar.open), h = finite(bar.high), l = finite(bar.low), c = finite(bar.close);
+        if (!Number.isFinite(t) || o == null || h == null || l == null || c == null) return null;
+        return { t: new Date(t).toISOString(), o, h, l, c, volume: finite(bar.volume) ?? undefined };
+      })
       .filter((bar): bar is TechnicalCandle => bar !== null)
       .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
 
-    if (biquoteCandles.length < 2) {
-      return NextResponse.json({
-        ok: false,
-        symbol,
-        timeframe,
-        error: "BiQuote did not return enough completed candles for an overlap test",
-        biquoteBars: biquoteCandles.length,
-      }, { status: 424 });
+    const compressed = Buffer.from(await archiveResponse.arrayBuffer());
+    const archiveRows = JSON.parse(gunzipSync(compressed).toString("utf8")) as Array<Record<string, unknown>>;
+    const evByBasis: Record<Basis, TechnicalCandle[]> = { bid: [], ask: [], mid: [] };
+    for (const row of archiveRows) {
+      const ts = finite(row.ts);
+      const bidO = finite(row.o), bidH = finite(row.h), bidL = finite(row.l), bidC = finite(row.c);
+      const askO = finite(row.ao), askH = finite(row.ah), askL = finite(row.al), askC = finite(row.ac);
+      if (ts == null || bidO == null || bidH == null || bidL == null || bidC == null ||
+          askO == null || askH == null || askL == null || askC == null) continue;
+      const t = new Date(ts * 1000).toISOString();
+      evByBasis.bid.push({ t, o: bidO, h: bidH, l: bidL, c: bidC, volume: finite(row.v) ?? undefined });
+      evByBasis.ask.push({ t, o: askO, h: askH, l: askL, c: askC, volume: finite(row.v) ?? undefined });
+      evByBasis.mid.push({
+        t,
+        o: (bidO + askO) / 2,
+        h: (bidH + askH) / 2,
+        l: (bidL + askL) / 2,
+        c: (bidC + askC) / 2,
+        volume: finite(row.v) ?? undefined,
+      });
     }
 
-    const from = biquoteCandles[0].t;
-    const to = new Date().toISOString();
-    const instrument = symbol.toLowerCase() as "xauusd" | "xagusd";
-    const rawDukascopy = await getHistoricalRates({
-      instrument,
-      dates: { from, to },
-      timeframe: spec.dukascopy,
-      priceType: "bid",
-      format: "json",
-      volumes: true,
-      batchSize: 5,
-      pauseBetweenBatchesMs: 500,
-      retryCount: 2,
-      pauseBetweenRetriesMs: 500,
-      useCache: false,
-    }) as unknown as Array<Record<string, unknown>>;
-
-    const dukascopyCandles = rawDukascopy
-      .map((bar) => cleanCandle(bar, "Dukascopy"))
-      .filter((bar): bar is TechnicalCandle => bar !== null)
-      .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
-
-    const biquoteByTime = new Map(biquoteCandles.map((bar) => [bar.t, bar]));
-    const dukascopyByTime = new Map(dukascopyCandles.map((bar) => [bar.t, bar]));
-    const commonTimes = [...biquoteByTime.keys()]
-      .filter((time) => dukascopyByTime.has(time))
+    const biquoteMap = new Map(biquote.map((bar) => [bar.t, bar]));
+    const evMaps = Object.fromEntries(
+      (Object.keys(evByBasis) as Basis[]).map((basis) => [
+        basis,
+        new Map(evByBasis[basis].map((bar) => [bar.t, bar])),
+      ]),
+    ) as Record<Basis, Map<string, TechnicalCandle>>;
+    const commonTimes = [...biquoteMap.keys()]
+      .filter((time) => evMaps.bid.has(time) && evMaps.ask.has(time) && evMaps.mid.has(time))
       .sort((a, b) => Date.parse(a) - Date.parse(b));
+    const alignedBiQuote = commonTimes.map((time) => biquoteMap.get(time)!);
+    const alignedEv = {
+      bid: commonTimes.map((time) => evMaps.bid.get(time)!),
+      ask: commonTimes.map((time) => evMaps.ask.get(time)!),
+      mid: commonTimes.map((time) => evMaps.mid.get(time)!),
+    };
 
-    const closeDiffs: number[] = [];
-    const closePctDiffs: number[] = [];
-    const ohlcDiffs: number[] = [];
-    for (const time of commonTimes) {
-      const b = biquoteByTime.get(time)!;
-      const d = dukascopyByTime.get(time)!;
-      closeDiffs.push(Math.abs(b.c - d.c));
-      closePctDiffs.push(Math.abs(b.c - d.c) / Math.abs(b.c) * 100);
-      ohlcDiffs.push(
-        Math.abs(b.o - d.o),
-        Math.abs(b.h - d.h),
-        Math.abs(b.l - d.l),
-        Math.abs(b.c - d.c),
-      );
-    }
-
-    const max = (values: number[]) => values.length ? Math.max(...values) : null;
-    const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
-    const biquoteIndicators = indicatorSnapshot(biquoteCandles);
-    const dukascopyIndicators = indicatorSnapshot(dukascopyCandles);
+    const ohlcDifference = {
+      bid: summarizeDiff(alignedBiQuote, alignedEv.bid),
+      ask: summarizeDiff(alignedBiQuote, alignedEv.ask),
+      mid: summarizeDiff(alignedBiQuote, alignedEv.mid),
+    };
+    const meanClose = {
+      bid: ohlcDifference.bid.meanAbsolute.close,
+      ask: ohlcDifference.ask.meanAbsolute.close,
+      mid: ohlcDifference.mid.meanAbsolute.close,
+    };
+    const bestBasis = (Object.keys(meanClose) as Basis[])
+      .filter((basis) => meanClose[basis] != null)
+      .sort((a, b) => meanClose[a]! - meanClose[b]!)[0] ?? null;
+    const biquoteIndicators = snapshot(alignedBiQuote);
+    const evIndicators = {
+      bid: snapshot(alignedEv.bid),
+      ask: snapshot(alignedEv.ask),
+      mid: snapshot(alignedEv.mid),
+    };
 
     return NextResponse.json({
       ok: true,
       symbol,
       timeframe,
-      window: { from, to },
+      archiveYear: year,
+      archiveRows: archiveRows.length,
+      archiveCompressedBytes: compressed.length,
       sources: {
-        biquote: "BiQuote OHLC (native source used by GSAT)",
-        dukascopy: "Dukascopy Bank historical feed, BID candles",
+        biquote: "BiQuote native OHLC",
+        evTradingLabs: "EV Trading Labs archive, aggregated from Dukascopy ticks with bid and ask",
       },
       candleCounts: {
-        biquote: biquoteCandles.length,
-        dukascopy: dukascopyCandles.length,
+        biquote: biquote.length,
+        evTradingLabs: evByBasis.bid.length,
         exactTimestampMatches: commonTimes.length,
-        biquoteOnly: biquoteCandles.length - commonTimes.length,
-        dukascopyOnly: dukascopyCandles.length - commonTimes.length,
+        biquoteOnly: biquote.length - commonTimes.length,
+        evOnly: evByBasis.bid.length - commonTimes.length,
       },
-      ohlcDifference: {
-        meanAbsoluteCloseDifference: mean(closeDiffs),
-        maxAbsoluteCloseDifference: max(closeDiffs),
-        meanAbsoluteCloseDifferencePercent: mean(closePctDiffs),
-        maxAbsoluteCloseDifferencePercent: max(closePctDiffs),
-        meanAbsoluteOhlcDifference: mean(ohlcDiffs),
-        maxAbsoluteOhlcDifference: max(ohlcDiffs),
-      },
+      commonWindow: commonTimes.length ? { from: commonTimes[0], to: commonTimes[commonTimes.length - 1] } : null,
+      bestMatchingEVPriceBasisByMeanCloseDifference: bestBasis,
+      ohlcDifference,
       indicatorDifference: {
-        ema20: difference(biquoteIndicators.ema20, dukascopyIndicators.ema20),
-        ema50: difference(biquoteIndicators.ema50, dukascopyIndicators.ema50),
-        ema200: difference(biquoteIndicators.ema200, dukascopyIndicators.ema200),
-        rsi14: difference(biquoteIndicators.rsi14, dukascopyIndicators.rsi14),
-        macd: difference(biquoteIndicators.macd, dukascopyIndicators.macd),
-        macdSignal: difference(biquoteIndicators.macdSignal, dukascopyIndicators.macdSignal),
-        macdHistogram: difference(biquoteIndicators.macdHistogram, dukascopyIndicators.macdHistogram),
-        atr14: difference(biquoteIndicators.atr14, dukascopyIndicators.atr14),
+        ema20: { biquote: biquoteIndicators.ema20, evBid: evIndicators.bid.ema20, evAsk: evIndicators.ask.ema20, evMid: evIndicators.mid.ema20 },
+        ema50: { biquote: biquoteIndicators.ema50, evBid: evIndicators.bid.ema50, evAsk: evIndicators.ask.ema50, evMid: evIndicators.mid.ema50 },
+        ema200: { biquote: biquoteIndicators.ema200, evBid: evIndicators.bid.ema200, evAsk: evIndicators.ask.ema200, evMid: evIndicators.mid.ema200 },
+        rsi14: { biquote: biquoteIndicators.rsi14, evBid: evIndicators.bid.rsi14, evAsk: evIndicators.ask.rsi14, evMid: evIndicators.mid.rsi14 },
+        macd: { biquote: biquoteIndicators.macd, evBid: evIndicators.bid.macd, evAsk: evIndicators.ask.macd, evMid: evIndicators.mid.macd },
+        macdSignal: { biquote: biquoteIndicators.macdSignal, evBid: evIndicators.bid.macdSignal, evAsk: evIndicators.ask.macdSignal, evMid: evIndicators.mid.macdSignal },
+        macdHistogram: { biquote: biquoteIndicators.macdHistogram, evBid: evIndicators.bid.macdHistogram, evAsk: evIndicators.ask.macdHistogram, evMid: evIndicators.mid.macdHistogram },
+        atr14: { biquote: biquoteIndicators.atr14, evBid: evIndicators.bid.atr14, evAsk: evIndicators.ask.atr14, evMid: evIndicators.mid.atr14 },
       },
-      biquoteIndicators,
-      dukascopyIndicators,
-      interpretation: "Reference comparison only. These are different broker feeds and may use different bid/ask construction. Do not merge the two candle histories until the overlap differences and timestamp alignment are reviewed.",
+      caveat: "This is a feed comparison on exact common UTC candle timestamps. EV Trading Labs is Dukascopy-derived, not BiQuote. Do not merge the histories until price-basis and OHLC differences are reviewed. Indicator comparisons are only meaningful when the common timestamp sample is sufficiently long.",
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({
       ok: false,
       symbol,
       timeframe,
-      error: error instanceof Error ? error.message : "Source parity comparison failed",
+      error: error instanceof Error ? error.message : "Historical source comparison failed",
     }, { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 }
