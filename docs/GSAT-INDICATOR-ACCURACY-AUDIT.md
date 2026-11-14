@@ -138,7 +138,9 @@ Successfully downloaded and decompressed all eight 2025 symbol/timeframe files i
 | XAUUSD | 23,638 | 5,913 | 1,599 | 312 |
 | XAGUSD | 23,638 | 5,913 | 1,599 | 312 |
 
-The compressed files total approximately 1.5 MB for both metals across all four timeframes for 2025. The 2025 archive has enough bars for EMA200 on the intraday timeframes. Daily EMA200 is calculable with 312 bars, but a 1,000-bar daily warm-up requires roughly four years.
+The 2024 archive was also verified for all eight symbol/timeframe combinations: 23,733 M15, 5,938 H1, 1,606 H4 and 313 D1 rows per metal. The 2025 archive has 23,638 M15, 5,913 H1, 1,599 H4 and 312 D1 rows per metal. These are two calendar years of third-party archive availability, not two years of BiQuote-compatible candles.
+
+The 2025 archive has enough bars for EMA200 on the intraday timeframes. Daily EMA200 is calculable with 312 bars, but a 1,000-bar daily warm-up requires roughly four years. Neither 2024 nor 2025 EV/Dukascopy data is inserted into GSAT's BiQuote series.
 
 The data is Dukascopy-derived, not BiQuote. A preview-only `/api/validation/source-parity` endpoint compares exact common UTC candle timestamps and tests BiQuote against EV bid, ask and midpoint constructions. For 2025, only daily data overlaps the current BiQuote daily history; 2025 intraday files do not overlap BiQuote's 2026-only intraday history. Current-year EV files require a free account, so intraday source parity remains unverified.
 
