@@ -22,22 +22,45 @@ function finite(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+function numericValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function optionalNonNegative(value: unknown): number | undefined {
+  const parsed = numericValue(value);
+  return parsed !== null && parsed >= 0 ? parsed : undefined;
+}
+
 export function normalizeMasterCandles(bars: Array<Record<string, unknown>>, symbol: MasterCandle["symbol"]): MasterCandle[] {
   const dedup = new Map<string, MasterCandle>();
   for (const bar of bars) {
-    const t = String(bar.openTime ?? bar.t ?? "");
+    if (bar.isOpen === true) continue;
+    const rawTime = bar.openTime ?? bar.t;
+    if (typeof rawTime !== "string") continue;
+    const timestamp = Date.parse(rawTime);
+    if (!Number.isFinite(timestamp)) continue;
+
+    const o = numericValue(bar.open ?? bar.o);
+    const h = numericValue(bar.high ?? bar.h);
+    const l = numericValue(bar.low ?? bar.l);
+    const c = numericValue(bar.close ?? bar.c);
+    if (o === null || h === null || l === null || c === null) continue;
+    if (o <= 0 || h <= 0 || l <= 0 || c <= 0) continue;
+    if (h < Math.max(o, c, l) || l > Math.min(o, c, h)) continue;
+
+    const t = new Date(timestamp).toISOString();
     const candle: MasterCandle = {
       symbol,
       t,
-      o: Number(bar.open ?? bar.o),
-      h: Number(bar.high ?? bar.h),
-      l: Number(bar.low ?? bar.l),
-      c: Number(bar.close ?? bar.c),
-      volume: finite(Number(bar.volume)) ? Number(bar.volume) : undefined,
-      tickVolume: finite(Number(bar.tickVolume)) ? Number(bar.tickVolume) : undefined,
+      o,
+      h,
+      l,
+      c,
+      volume: optionalNonNegative(bar.volume),
+      tickVolume: optionalNonNegative(bar.tickVolume),
     };
-    if (!t || ![candle.o, candle.h, candle.l, candle.c].every(Number.isFinite)) continue;
-    if (bar.isOpen === true) continue;
     dedup.set(t, candle);
   }
   return [...dedup.values()].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
