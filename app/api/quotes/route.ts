@@ -7,6 +7,8 @@ type Quote = {
   currency: string;
   changePercent: number | null;
   marketState: string;
+  stale: boolean;
+  quoteAgeSeconds: number | null;
   providerUpdatedAt: string | null;
   provider: string;
 };
@@ -36,14 +38,21 @@ async function fetchBiquote(symbol: "XAUUSD" | "XAGUSD"): Promise<Quote> {
 
   const parsedTimestamp = data.timestamp ? Date.parse(data.timestamp) : NaN;
   const providerUpdatedAt = Number.isFinite(parsedTimestamp) ? new Date(parsedTimestamp).toISOString() : null;
+  const marketState = String(data.marketState ?? (data.stale ? "stale" : "open")).toLowerCase();
+  const stale = data.stale === true || marketState !== "open";
+  const quoteAgeSeconds = data.quoteAgeSeconds != null && Number.isFinite(Number(data.quoteAgeSeconds))
+    ? Number(data.quoteAgeSeconds)
+    : Number.isFinite(parsedTimestamp) ? Math.max(0, Math.round((Date.now() - parsedTimestamp) / 1000)) : null;
 
   return {
     symbol: symbol === "XAUUSD" ? "XAU/USD" : "XAG/USD",
     label: symbol === "XAUUSD" ? "Gold" : "Silver",
     price,
     currency: "USD",
-    changePercent: Number.isFinite(Number(data.dayDiffPercent)) ? Number(data.dayDiffPercent) : null,
-    marketState: data.marketState ?? (data.stale ? "STALE" : "OPEN"),
+    changePercent: !stale && Number.isFinite(Number(data.dayDiffPercent)) ? Number(data.dayDiffPercent) : null,
+    marketState,
+    stale,
+    quoteAgeSeconds,
     providerUpdatedAt,
     provider: "BiQuote",
   };
