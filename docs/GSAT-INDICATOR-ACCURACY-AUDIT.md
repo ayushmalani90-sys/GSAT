@@ -18,13 +18,15 @@
 
 ### 1. Preview regression suite
 
-The preview self-test endpoint returned HTTP 200. Before the history-readiness and independent-benchmark additions, the suite passed 33 checks:
-- Master OHLC normalization: 4
+The latest preview self-test endpoint returned HTTP 200 and passed 54 deterministic checks:
+- Master OHLC normalization and malformed-candle guards: 7
 - Core indicator regressions: 11
 - Advanced indicator regressions: 10
 - Independent BiQuote indicator golden vectors: 8
+- Timeframe-aware history-readiness boundaries: 10
+- Independent benchmark golden cases: 8
 
-The new additions contribute another 16 deterministic checks: 8 history-readiness boundary cases and 8 independent-benchmark golden cases. The combined suite must pass 49 checks before this PR is considered ready. These are deterministic regression tests, not market-prediction accuracy tests.
+These are deterministic regression tests, not market-prediction accuracy tests.
 
 ### 2. Persisted candle quality
 
@@ -44,33 +46,32 @@ Observed validation coverage:
 
 These are actual observed dates, not the desired retention policy.
 
-### 3. Live BiQuote history returned by the preview API
+### 3. Persisted history is now the analysis input
 
-At the audit snapshot, the live analysis endpoint returned these completed candle counts for both metals:
+The validation preview's `/api/analysis` route now reads the latest 1,000 completed BiQuote candles per metal/timeframe from the validation Supabase database. It no longer calculates preview indicators from a separate short-lived live history request when the validation database is configured. Live BiQuote remains the spot quote source.
 
-| Timeframe | Returned bars | EMA200 |
-|---|---:|---|
-| 15m | 192 | Unavailable |
-| 1H | 168 | Unavailable |
-| 4H | 180 | Unavailable |
-| 1D | 499 | Available |
+At the latest validation snapshot, both metals had:
 
-The first three timeframes cannot calculate EMA200 because they have fewer than 200 completed candles. Daily EMA200 is calculable, but 499 bars remain below the conservative 1,000-bar recommended warm-up target.
+| Timeframe | Persisted bars | EMA200 | Recommended warm-up |
+|---|---:|---|---|
+| 15m | 213 | Calculable | Short: 213 / 1,000 |
+| 1H | 173 | Unavailable (<200) | Short: 173 / 1,000 |
+| 4H | 181 | Unavailable (<200) | Short: 181 / 1,000 |
+| 1D | 499 | Calculable | Short: 499 / 500 |
 
-This is a source-history limitation, not an arithmetic failure. The API requests up to 1,000 bars and follows only explicit provider cursors; the provider returned shorter histories in this snapshot.
+The API reports the source, first and latest candle timestamps, latest ingestion timestamp, age, freshness and rejected-row count for each symbol/timeframe. The current snapshot had zero rejected rows. The market was closed when this test ran, so old candle age was reported as `market_closed`, not as a live-feed failure.
+
+This is a real storage-to-analysis integration. It does not manufacture missing history: 1H and 4H EMA200 remain unavailable until at least 200 completed candles exist.
 
 ### 4. Independent calculation parity against persisted validation candles
 
-An independent calculation implementation was run over the validation database's most recent candles, aligned to the sample counts returned by the live preview API (192, 168, 180 and 499 bars).
+The independent calculation audit now runs inside the preview API against the actual persisted BiQuote candle inputs.
 
-Across all eight metal/timeframe combinations:
-- EMA20 and EMA50 matched the preview API exactly.
-- EMA200 matched exactly where available (1D); it was unavailable on 15m, 1H and 4H in both calculations.
-- RSI14 matched exactly.
-- MACD line, signal and histogram matched exactly.
-- ATR14 matched exactly.
-
-**Maximum observed absolute difference: 0** for every available comparison in this snapshot.
+Across the eight metal/timeframe combinations:
+- Zero formula mismatches.
+- 15m and 1D audits pass for all eight core metrics.
+- 1H and 4H audits are marked incomplete only because EMA200 is unavailable below 200 bars.
+- Maximum observed absolute difference is approximately 2.36e-11 for gold and 3.06e-13 for silver, well inside the 1e-8 tolerance.
 
 This is strong evidence that the formula implementation and persisted candle calculations agree for the tested snapshot. It does not prove future feed integrity, full historical continuity, parity with another broker's different price feed, or profitable signals.
 
@@ -103,7 +104,8 @@ The diagnostic distinguishes minimum mathematical requirements from conservative
 |---|---:|---:|
 | EMA20 | 20 | 100 |
 | EMA50 | 50 | 250 |
-| EMA200 | 200 | 1,000 |
+| EMA200 (15m / 1H / 4H) | 200 | 1,000 |
+| EMA200 (1D) | 200 | 500 |
 | RSI14 | 15 closes | 100 |
 | MACD 12/26/9 | 34 | 200 |
 | ATR14 | 14 | 100 |
@@ -123,7 +125,7 @@ BiQuote's public OHLC documentation supports `from`/`to` date ranges and a maxim
 
 A zero-row historical response is now recorded as `historicalRangeEmpty: true` and `marketClosed: false`; an empty old range is not evidence that the market was closed. These probes did not insert external data into the BiQuote candle table.
 
-The results do not support a claim that BiQuote can currently supply 1,000 historical candles for every required timeframe. The current direct preview counts remain 192 × 15m, 168 × 1H, 180 × 4H and 499 × 1D per metal.
+The results do not support a claim that BiQuote can currently supply 1,000 historical candles for every required timeframe. The direct BiQuote history endpoint snapshot returned 192 × 15m, 168 × 1H, 180 × 4H and 499 × 1D per metal. The validation analysis route now uses the persisted database path instead; the 15m/1H/4H history gaps remain a provider/backfill limitation.
 
 ## Free external archive verified
 
@@ -165,11 +167,11 @@ MetalCharts documents a Starter plan at $9/month with one year of intraday histo
 ## One-minute collection removed from validation
 
 The validation collector was changed as follows:
-- Supabase Cron schedule changed from every minute to every 15 minutes.
-- Edge Function `gsat-ingest` is now version 12 and only accepts 15m, 1H, 4H and 1D.
-- The validation candle table constraint now rejects 1m rows.
+- Supabase Cron now runs every 15 minutes under the job name `gsat-ingest-every-15-minutes`.
+- Edge Function `gsat-ingest` is version 12 and only accepts 15m, 1H, 4H and 1D.
+- The candle table constraint rejects 1m rows and the ingestion-run default timeframe list no longer includes 1m.
 - Existing validation 1m candle rows were deleted.
-- Health now records `latest_closed_15m_candle_at`; the legacy 1m timestamp was cleared.
+- Health records `latest_closed_15m_candle_at`; the legacy 1m health column was dropped.
 - A forced ingestion test across the four approved timeframes completed successfully: 8 feed calls, 42 raw bars, 34 completed candle updates, zero rejected bars, zero gaps and no collector health failures.
 
 Validation candle rows after removal:
@@ -179,7 +181,9 @@ Validation candle rows after removal:
 - 1D: 998 total (499 per metal)
 - 1m: 0
 
-This change is isolated to the validation Supabase project. Production collector and production database were not changed.
+The validation candle table has a read-only RLS policy for `anon` and `authenticated` roles. Those roles cannot insert, update or delete candles. Health and ingestion-run tables explicitly deny public API-role access and retain no public grants.
+
+The Vercel Supabase URL and publishable key are scoped only to preview deployments of `gsat-indicator-accuracy-audit`. The analysis route identifies whether it is using persisted history or the direct BiQuote fallback. Production collector, production database and production environment variables were not changed.
 
 ## Integration gate
 
