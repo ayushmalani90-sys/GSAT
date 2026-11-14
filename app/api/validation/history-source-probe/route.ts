@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     const html = await pageResponse.text();
     const archiveUrls = [...html.matchAll(/https:\/\/evtradelabs\.com\/api\/simulator\/data\/[A-Z0-9]+\/[A-Z0-9]+\/\d{4}\.json\.gz/g)]
       .map((match) => match[0]);
-    const url = archiveUrls.find((value) => value.includes(`/${symbol}/${timeframe}/${year}.json.gz`));
+    const url = archiveUrls.find((value) => value.includes(`/${symbol}/${timeframe}/${year}.json.gz`)) ?? `https://evtradelabs.com/api/simulator/data/${symbol}/${timeframe}/${year}.json.gz`;
     if (!url) {
       return NextResponse.json({
         ok: false,
