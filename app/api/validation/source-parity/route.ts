@@ -200,10 +200,9 @@ export async function GET(request: Request) {
     const bestBasis = (Object.keys(meanClose) as Basis[])
       .filter((basis) => meanClose[basis] != null)
       .sort((a, b) => meanClose[a]! - meanClose[b]!)[0] ?? null;
-    // Compare indicator values at the last common candle using each provider's
-    // complete native history up to that instant. Computing indicators on the
-    // timestamp intersection would silently drop provider-only candles and
-    // change EMA/RSI/MACD/ATR paths.
+    // Report two indicator comparisons. The aligned series isolates price-feed
+    // differences on identical timestamps; the native series shows the effect
+    // of each provider's full available history and warm-up depth.
     const lastCommonTime = commonTimes[commonTimes.length - 1];
     const lastCommonTimestamp = Date.parse(lastCommonTime);
     const biquoteAtCommonEnd = biquote.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp);
@@ -212,8 +211,14 @@ export async function GET(request: Request) {
       ask: evByBasis.ask.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp),
       mid: evByBasis.mid.filter((bar) => Date.parse(bar.t) <= lastCommonTimestamp),
     };
-    const biquoteIndicators = snapshot(biquoteAtCommonEnd);
-    const evIndicators = {
+    const alignedBiQuoteIndicators = snapshot(alignedBiQuote);
+    const alignedEvIndicators = {
+      bid: snapshot(alignedEv.bid),
+      ask: snapshot(alignedEv.ask),
+      mid: snapshot(alignedEv.mid),
+    };
+    const biquoteNativeIndicators = snapshot(biquoteAtCommonEnd);
+    const evNativeIndicators = {
       bid: snapshot(evAtCommonEnd.bid),
       ask: snapshot(evAtCommonEnd.ask),
       mid: snapshot(evAtCommonEnd.mid),
@@ -243,19 +248,30 @@ export async function GET(request: Request) {
       largestMidCloseDifferences,
       indicatorComparisonWindow: {
         asOf: lastCommonTime,
+        exactTimestampBarsCompared: alignedBiQuote.length,
         biquoteNativeBarsUsed: biquoteAtCommonEnd.length,
         evNativeBarsUsed: evAtCommonEnd.mid.length,
-        note: "Indicators are calculated on each provider's complete native candle sequence through the last exact common timestamp; OHLC differences use exact timestamp intersections only.",
+        note: "indicatorDifference uses the exact timestamp intersection for a like-for-like feed comparison. nativeIndicatorDifference uses each provider's complete native candle sequence through the same end timestamp and exposes warm-up/history-depth effects.",
       },
       indicatorDifference: {
-        ema20: { biquote: biquoteIndicators.ema20, evBid: evIndicators.bid.ema20, evAsk: evIndicators.ask.ema20, evMid: evIndicators.mid.ema20 },
-        ema50: { biquote: biquoteIndicators.ema50, evBid: evIndicators.bid.ema50, evAsk: evIndicators.ask.ema50, evMid: evIndicators.mid.ema50 },
-        ema200: { biquote: biquoteIndicators.ema200, evBid: evIndicators.bid.ema200, evAsk: evIndicators.ask.ema200, evMid: evIndicators.mid.ema200 },
-        rsi14: { biquote: biquoteIndicators.rsi14, evBid: evIndicators.bid.rsi14, evAsk: evIndicators.ask.rsi14, evMid: evIndicators.mid.rsi14 },
-        macd: { biquote: biquoteIndicators.macd, evBid: evIndicators.bid.macd, evAsk: evIndicators.ask.macd, evMid: evIndicators.mid.macd },
-        macdSignal: { biquote: biquoteIndicators.macdSignal, evBid: evIndicators.bid.macdSignal, evAsk: evIndicators.ask.macdSignal, evMid: evIndicators.mid.macdSignal },
-        macdHistogram: { biquote: biquoteIndicators.macdHistogram, evBid: evIndicators.bid.macdHistogram, evAsk: evIndicators.ask.macdHistogram, evMid: evIndicators.mid.macdHistogram },
-        atr14: { biquote: biquoteIndicators.atr14, evBid: evIndicators.bid.atr14, evAsk: evIndicators.ask.atr14, evMid: evIndicators.mid.atr14 },
+        ema20: { biquote: alignedBiQuoteIndicators.ema20, evBid: alignedEvIndicators.bid.ema20, evAsk: alignedEvIndicators.ask.ema20, evMid: alignedEvIndicators.mid.ema20 },
+        ema50: { biquote: alignedBiQuoteIndicators.ema50, evBid: alignedEvIndicators.bid.ema50, evAsk: alignedEvIndicators.ask.ema50, evMid: alignedEvIndicators.mid.ema50 },
+        ema200: { biquote: alignedBiQuoteIndicators.ema200, evBid: alignedEvIndicators.bid.ema200, evAsk: alignedEvIndicators.ask.ema200, evMid: alignedEvIndicators.mid.ema200 },
+        rsi14: { biquote: alignedBiQuoteIndicators.rsi14, evBid: alignedEvIndicators.bid.rsi14, evAsk: alignedEvIndicators.ask.rsi14, evMid: alignedEvIndicators.mid.rsi14 },
+        macd: { biquote: alignedBiQuoteIndicators.macd, evBid: alignedEvIndicators.bid.macd, evAsk: alignedEvIndicators.ask.macd, evMid: alignedEvIndicators.mid.macd },
+        macdSignal: { biquote: alignedBiQuoteIndicators.macdSignal, evBid: alignedEvIndicators.bid.macdSignal, evAsk: alignedEvIndicators.ask.macdSignal, evMid: alignedEvIndicators.mid.macdSignal },
+        macdHistogram: { biquote: alignedBiQuoteIndicators.macdHistogram, evBid: alignedEvIndicators.bid.macdHistogram, evAsk: alignedEvIndicators.ask.macdHistogram, evMid: alignedEvIndicators.mid.macdHistogram },
+        atr14: { biquote: alignedBiQuoteIndicators.atr14, evBid: alignedEvIndicators.bid.atr14, evAsk: alignedEvIndicators.ask.atr14, evMid: alignedEvIndicators.mid.atr14 },
+      },
+      nativeIndicatorDifference: {
+        ema20: { biquote: biquoteNativeIndicators.ema20, evBid: evNativeIndicators.bid.ema20, evAsk: evNativeIndicators.ask.ema20, evMid: evNativeIndicators.mid.ema20 },
+        ema50: { biquote: biquoteNativeIndicators.ema50, evBid: evNativeIndicators.bid.ema50, evAsk: evNativeIndicators.ask.ema50, evMid: evNativeIndicators.mid.ema50 },
+        ema200: { biquote: biquoteNativeIndicators.ema200, evBid: evNativeIndicators.bid.ema200, evAsk: evNativeIndicators.ask.ema200, evMid: evNativeIndicators.mid.ema200 },
+        rsi14: { biquote: biquoteNativeIndicators.rsi14, evBid: evNativeIndicators.bid.rsi14, evAsk: evNativeIndicators.ask.rsi14, evMid: evNativeIndicators.mid.rsi14 },
+        macd: { biquote: biquoteNativeIndicators.macd, evBid: evNativeIndicators.bid.macd, evAsk: evNativeIndicators.ask.macd, evMid: evNativeIndicators.mid.macd },
+        macdSignal: { biquote: biquoteNativeIndicators.macdSignal, evBid: evNativeIndicators.bid.macdSignal, evAsk: evNativeIndicators.ask.macdSignal, evMid: evNativeIndicators.mid.macdSignal },
+        macdHistogram: { biquote: biquoteNativeIndicators.macdHistogram, evBid: evNativeIndicators.bid.macdHistogram, evAsk: evNativeIndicators.ask.macdHistogram, evMid: evNativeIndicators.mid.macdHistogram },
+        atr14: { biquote: biquoteNativeIndicators.atr14, evBid: evNativeIndicators.bid.atr14, evAsk: evNativeIndicators.ask.atr14, evMid: evNativeIndicators.mid.atr14 },
       },
       caveat: "This is a feed comparison on exact common UTC candle timestamps. EV Trading Labs is Dukascopy-derived, not BiQuote. Do not merge the histories until price-basis and OHLC differences are reviewed. Indicator comparisons are only meaningful when the common timestamp sample is sufficiently long.",
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
