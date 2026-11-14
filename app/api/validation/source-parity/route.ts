@@ -6,10 +6,10 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const TIMEFRAMES = {
-  "15m": "M15",
-  "1H": "H1",
-  "4H": "H4",
-  "1D": "D1",
+  "15m": { biquote: "15m", ev: "M15" },
+  "1H": { biquote: "1h", ev: "H1" },
+  "4H": { biquote: "4h", ev: "H4" },
+  "1D": { biquote: "1d", ev: "D1" },
 } as const;
 type SymbolCode = "XAUUSD" | "XAGUSD";
 type Basis = "bid" | "ask" | "mid";
