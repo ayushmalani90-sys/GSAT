@@ -180,6 +180,16 @@ export async function GET(request: Request) {
       ask: ohlcDifference.ask.meanAbsolute.close,
       mid: ohlcDifference.mid.meanAbsolute.close,
     };
+    const largestMidCloseDifferences = commonTimes.map((time) => {
+      const b = biquoteMap.get(time)!;
+      const e = evMaps.mid.get(time)!;
+      return {
+        time,
+        absoluteCloseDifference: Math.abs(b.c - e.c),
+        biquote: { open: b.o, high: b.h, low: b.l, close: b.c },
+        evMid: { open: e.o, high: e.h, low: e.l, close: e.c },
+      };
+    }).sort((a, b) => b.absoluteCloseDifference - a.absoluteCloseDifference).slice(0, 5);
     const bestBasis = (Object.keys(meanClose) as Basis[])
       .filter((basis) => meanClose[basis] != null)
       .sort((a, b) => meanClose[a]! - meanClose[b]!)[0] ?? null;
@@ -211,6 +221,7 @@ export async function GET(request: Request) {
       commonWindow: commonTimes.length ? { from: commonTimes[0], to: commonTimes[commonTimes.length - 1] } : null,
       bestMatchingEVPriceBasisByMeanCloseDifference: bestBasis,
       ohlcDifference,
+      largestMidCloseDifferences,
       indicatorDifference: {
         ema20: { biquote: biquoteIndicators.ema20, evBid: evIndicators.bid.ema20, evAsk: evIndicators.ask.ema20, evMid: evIndicators.mid.ema20 },
         ema50: { biquote: biquoteIndicators.ema50, evBid: evIndicators.bid.ema50, evAsk: evIndicators.ask.ema50, evMid: evIndicators.mid.ema50 },
