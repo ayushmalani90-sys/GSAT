@@ -29,12 +29,17 @@ export function runIndicatorQualityTests() {
   const at999 = assessIndicatorHistory(999);
   assert(!at999.recommendedWarmupMet, "999 bars must remain below the 1,000-bar recommended warm-up");
 
-  const at1000 = assessIndicatorHistory(1000);
-  assert(at1000.recommendedWarmupMet, "1,000 bars should satisfy all core recommended warm-up targets");
+  const at1000 = assessIndicatorHistory(1000, "15m");
+  assert(at1000.recommendedWarmupMet, "1,000 intraday bars should satisfy all core recommended warm-up targets");
+
+  const daily499 = assessIndicatorHistory(499, "1D");
+  assert(!daily499.recommendedWarmupMet, "499 daily bars must remain below the two-year EMA200 warm-up target");
+  const daily500 = assessIndicatorHistory(500, "1D");
+  assert(daily500.recommendedWarmupMet, "500 daily bars should satisfy the daily EMA200 warm-up target");
 
   return {
     passed: true,
-    cases: 8,
-    note: "History readiness distinguishes minimum mathematical requirements from recommended warm-up targets.",
+    cases: 10,
+    note: "History readiness distinguishes mathematical minimums from timeframe-aware warm-up targets; daily EMA200 can meet its target inside two years of trading sessions.",
   };
 }
