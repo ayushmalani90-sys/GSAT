@@ -33,7 +33,6 @@ as $function$
     (select count(*)::bigint from public.gsat_market_candles);
 $function$;
 
-revoke all on function public.gsat_prune_market_candles() from public, anon, authenticated;
 revoke all on function public.gsat_get_storage_usage() from public, anon, authenticated;
 grant execute on function public.gsat_prune_market_candles() to service_role;
 grant execute on function public.gsat_get_storage_usage() to service_role;
