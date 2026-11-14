@@ -22,8 +22,8 @@ export async function GET(request: Request) {
   if (!TIMEFRAMES.includes(timeframe as (typeof TIMEFRAMES)[number])) {
     return NextResponse.json({ error: "timeframe must be M15, H1, H4 or D1" }, { status: 400 });
   }
-  if (!Number.isInteger(year) || year < 2003 || year > 2025) {
-    return NextResponse.json({ error: "year must be a closed year from 2003 to 2025" }, { status: 400 });
+  if (!Number.isInteger(year) || year < 2003 || year > 2026) {
+    return NextResponse.json({ error: "year must be from 2003 to 2026" }, { status: 400 });
   }
 
   try {
