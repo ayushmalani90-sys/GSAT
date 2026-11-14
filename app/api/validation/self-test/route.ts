@@ -4,6 +4,7 @@ import { runAdvancedIndicatorTests } from "../../../../lib/technical-advanced-te
 import { runMasterOhlcSelfTests } from "../../../../lib/market-data/master-ohlc-test";
 import { runBiquoteIndicatorTests } from "../../../../lib/biquote-indicator-tests";
 import { runIndicatorQualityTests } from "../../../../lib/indicator-quality-tests";
+import { runIndependentBenchmarkTests } from "../../../../lib/indicator-benchmark-tests";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,9 @@ export async function GET() {
     const advanced = runAdvancedIndicatorTests();
     const biquote = runBiquoteIndicatorTests();
     const historyQuality = runIndicatorQualityTests();
+    const independentBenchmark = runIndependentBenchmarkTests();
     return NextResponse.json(
-      { ok: true, masterOhlc, indicators, advanced, biquote, historyQuality },
+      { ok: true, masterOhlc, indicators, advanced, biquote, historyQuality, independentBenchmark },
       { headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   } catch (error) {
