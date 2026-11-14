@@ -148,6 +148,22 @@ export async function GET(request: Request) {
     const commonTimes = [...biquoteMap.keys()]
       .filter((time) => evMaps.bid.has(time) && evMaps.ask.has(time) && evMaps.mid.has(time))
       .sort((a, b) => Date.parse(a) - Date.parse(b));
+    if (commonTimes.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        symbol,
+        timeframe,
+        archiveYear: year,
+        archiveRows: archiveRows.length,
+        biquoteBars: biquote.length,
+        evTradingLabsBars: evByBasis.bid.length,
+        exactTimestampMatches: 0,
+        commonWindow: null,
+        ohlcDifference: null,
+        indicatorDifference: null,
+        caveat: "No exact UTC candle timestamps overlap. No OHLC or indicator parity claim is possible for this timeframe/year pair.",
+      }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    }
     const alignedBiQuote = commonTimes.map((time) => biquoteMap.get(time)!);
     const alignedEv = {
       bid: commonTimes.map((time) => evMaps.bid.get(time)!),
