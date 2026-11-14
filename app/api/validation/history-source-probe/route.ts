@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     });
     if (!pageResponse.ok) throw new Error("EV Trading Labs catalogue returned HTTP " + pageResponse.status);
     const html = await pageResponse.text();
-    const ldJsonBlocks = [...html.matchAll(/<script[^>]*type=["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script>/gi)]
+    const ldJsonBlocks = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
       .map((match) => {
         try { return JSON.parse(match[1]); } catch { return null; }
       })
