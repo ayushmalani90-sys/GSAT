@@ -105,16 +105,15 @@ export async function GET(request: Request) {
 
     const biquotePayload = await biquoteResponse.json() as { bars?: Array<Record<string, unknown>> };
     if (!Array.isArray(biquotePayload.bars)) throw new Error("BiQuote response did not contain bars");
-    const biquote = biquotePayload.bars
-      .filter((bar) => bar.isOpen === false)
-      .map((bar) => {
-        const t = Date.parse(String(bar.openTime ?? ""));
-        const o = finite(bar.open), h = finite(bar.high), l = finite(bar.low), c = finite(bar.close);
-        if (!Number.isFinite(t) || o == null || h == null || l == null || c == null) return null;
-        return { t: new Date(t).toISOString(), o, h, l, c, volume: finite(bar.volume) ?? undefined };
-      })
-      .filter((bar): bar is TechnicalCandle => bar !== null)
-      .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+    const biquote: TechnicalCandle[] = [];
+    for (const bar of biquotePayload.bars) {
+      if (bar.isOpen !== false) continue;
+      const t = Date.parse(String(bar.openTime ?? ""));
+      const o = finite(bar.open), h = finite(bar.high), l = finite(bar.low), c = finite(bar.close);
+      if (!Number.isFinite(t) || o == null || h == null || l == null || c == null) continue;
+      biquote.push({ t: new Date(t).toISOString(), o, h, l, c, volume: finite(bar.volume) ?? undefined });
+    }
+    biquote.sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
 
     const compressed = Buffer.from(await archiveResponse.arrayBuffer());
     const archiveRows = JSON.parse(gunzipSync(compressed).toString("utf8")) as Array<Record<string, unknown>>;
