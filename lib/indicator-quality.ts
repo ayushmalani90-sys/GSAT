@@ -25,13 +25,17 @@ function requirement(samples: number, minBars: number, recommendedWarmupBars: nu
  * Recommended warm-up counts reduce seed sensitivity; they are not guarantees
  * of predictive accuracy and are not hard requirements for indicator calculation.
  */
-export function assessIndicatorHistory(rawSamples: number) {
+export function assessIndicatorHistory(rawSamples: number, timeframe: "15m" | "1H" | "4H" | "1D" = "15m") {
   const samples = Number.isFinite(rawSamples) ? Math.max(0, Math.floor(rawSamples)) : 0;
+  // Two years of daily bars contain roughly 500 trading sessions. Keep the
+  // daily EMA200 warm-up target achievable within the retention policy while
+  // retaining the stricter 1,000-bar target for intraday calculations.
+  const ema200WarmupBars = timeframe === "1D" ? 500 : 1000;
 
   const indicators = {
     ema20: requirement(samples, 20, 100),
     ema50: requirement(samples, 50, 250),
-    ema200: requirement(samples, 200, 1000),
+    ema200: requirement(samples, 200, ema200WarmupBars),
     rsi14: requirement(samples, 15, 100),
     macd12269: requirement(samples, 34, 200),
     atr14: requirement(samples, 14, 100),
