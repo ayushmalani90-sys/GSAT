@@ -110,9 +110,62 @@ The diagnostic distinguishes minimum mathematical requirements from conservative
 
 These recommendations are engineering guidance, not hard mathematical requirements or guarantees of prediction accuracy.
 
+## BiQuote historical range probes
+
+BiQuote's public OHLC documentation supports `from`/`to` date ranges and a maximum of 1,000 bars per response. However, actual bounded-range probes for XAUUSD and XAGUSD returned:
+
+| Requested UTC range | 15m | 1H | 4H | 1D |
+|---|---:|---:|---:|---:|
+| 2026-10-01 to 2026-10-08 | 0 | 0 | 15 per metal | 7 per metal |
+| 2026-11-04 to 2026-11-08 | 0 | 54 per metal | — | — |
+| 2026-09-01 to 2026-10-01 | — | — | 0 | — |
+| 2025-01-01 to 2025-03-01 | — | — | — | 0 |
+
+A zero-row historical response is now recorded as `historicalRangeEmpty: true` and `marketClosed: false`; an empty old range is not evidence that the market was closed. The range probes were validation-only and did not mix external data into the BiQuote candle table.
+
+The results do not support a claim that BiQuote can currently supply 1,000 historical candles for every required timeframe. The current direct preview counts remain 192 × 15m, 168 × 1H, 180 × 4H and 499 × 1D per metal.
+
+## One-minute collection removed from validation
+
+The validation collector was changed as follows:
+- Supabase Cron schedule changed from every minute to every 15 minutes.
+- Edge Function `gsat-ingest` is now version 12 and only accepts 15m, 1H, 4H and 1D.
+- The validation candle table constraint now rejects 1m rows.
+- Existing validation 1m candle rows were deleted.
+- Health now records `latest_closed_15m_candle_at`; the legacy 1m timestamp was cleared.
+- A forced ingestion test across the four approved timeframes completed successfully: 8 feed calls, 42 raw bars, 34 completed candle updates, zero rejected bars, zero gaps and no collector health failures.
+
+Validation candle rows after removal:
+- 15m: 426 total (213 per metal)
+- 1H: 346 total (173 per metal)
+- 4H: 362 total (181 per metal)
+- 1D: 998 total (499 per metal)
+- 1m: 0
+
+This change is isolated to the validation Supabase project. Production collector and production database were not changed.
+
+## External historical source candidates
+
+### Free candidate: Dukascopy
+
+The public Dukascopy historical feed, accessed through the open-source `dukascopy-node` downloader, lists XAUUSD and XAGUSD data back to 1999, including 15m, 1H, 4H and daily candles. It is a different broker feed and its default candle price side is bid, whereas GSAT's BiQuote series has its own feed and price construction. It is suitable for a separately stored reference/seed dataset, not for silent concatenation with BiQuote candles.
+
+### Low-cost managed API: MetalCharts
+
+MetalCharts documents a Starter plan at $9/month with one year of intraday history (15m through 8H) and long daily history for metals. Its free tier is daily-only and limited to 30 days. It is easier to integrate as a REST API but remains a separate source from BiQuote.
+
+### Integration gate
+
+Do not mix Dukascopy or MetalCharts history into the BiQuote indicator series yet. First compare overlapping 15m, 1H, 4H and 1D bars using identical UTC candle boundaries and bid/ask/mid basis. Only after quantifying OHLC differences should we choose one of these paths:
+1. Keep BiQuote for all calculations and accept that EMA200 is unavailable on 15m, 1H and 4H until enough BiQuote bars accumulate.
+2. Use an external feed for the entire OHLC calculation series, while keeping the source clearly labelled and preserving BiQuote live spot cards only if the price-basis mismatch is acceptable.
+3. Use external history only as an indicator warm-up seed, explicitly labelled as mixed-source and validated for convergence against the subsequent BiQuote-only series.
+
+None of these paths creates a 99% or 99.99% prediction-accuracy guarantee. Formula parity, source parity and trading-signal performance remain separate tests.
+
 ## Not changed
 
 - No production deployment, production database, production secrets or production environment variables were changed.
-- No dashboard UI, TradingView widget, timeframe selector or BiQuote source behavior was changed.
-- The existing validation database still contains the legacy 1m rows and its collector configuration; the analysis calculations use native 15m/1H/4H/1D candles only. Removing 1m collection/storage is a separate validation change and is not silently claimed as completed here.
+- No dashboard UI, TradingView widget, timeframe selector or BiQuote spot quote source was changed.
 - No external provider data was mixed into GSAT calculations.
+- The 1m collection removal described above applies only to the validation project; production remains untouched.
