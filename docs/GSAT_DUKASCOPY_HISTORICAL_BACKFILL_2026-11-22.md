@@ -45,7 +45,18 @@ Daily comparison matched 505 timestamps per metal from 2025-04-06 through 2026-1
 
 Outliers include XAGUSD on 2025-10-10 (1.2513% close difference) and XAUUSD on 2025-06-20 (0.4688%). This indicates meaningful provider/session differences. Do not merge Dukascopy candles into the BiQuote production indicator stream. Further session alignment and outlier analysis are required before research backtests are trusted.
 
-A recent seven-day matched sample showed lower differences in many intraday windows, but that small sample is not a substitute for a full validation study.
+Recent seven-day intraday overlap (459 matched 15m candles, 114 matched 1h candles, and 30 matched 4h candles per metal):
+
+| Symbol | Timeframe | Mean absolute close difference | Median | Maximum |
+|---|---|---:|---:|---:|
+| XAGUSD | 15m | 0.04582% | 0.04626% | 0.12351% |
+| XAGUSD | 1h | 0.04672% | 0.04975% | 0.12351% |
+| XAGUSD | 4h | 0.04585% | 0.04931% | 0.07773% |
+| XAUUSD | 15m | 0.00682% | 0.00623% | 0.09674% |
+| XAUUSD | 1h | 0.00656% | 0.00607% | 0.01280% |
+| XAUUSD | 4h | 0.00700% | 0.00770% | 0.01247% |
+
+The intraday sample is recent and comparatively short; do not extrapolate these results to the full two-year period.
 
 ## Architecture and safety
 
