@@ -1,5 +1,5 @@
 import { atr, ema, macd, rma, rsi } from "./technical-reference";
-import { classifyMacdState, hasEmaWarmup } from "./technical-interpretation";
+import { classifyMacdState, hasEmaWarmup, scoreMacdState } from "./technical-interpretation";
 
 export type TechnicalCandle = { t: string; o: number; h: number; l: number; c: number; volume?: number; tickVolume?: number };
 export type Level = { price: number; strength: number; touches: number; distancePct: number };
@@ -235,7 +235,11 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const fib = price != null ? fibonacci(sorted, price) : { swingLow: null, swingHigh: null, levels: [], interpretation: "Price unavailable." };
   const vp = volumeProfile(sorted);
   const patterns = detectPatterns(sorted);
-  const score = (emaBias.includes("Bullish") ? 1 : emaBias.includes("Bearish") ? -1 : 0) + (rsiBias.includes("Bullish") ? 1 : rsiBias.includes("Bearish") ? -1 : 0) + (macdBias.includes("Bullish") ? 1 : macdBias.includes("Bearish") ? -1 : 0) + patterns.slice(0, 2).reduce((s, p) => s + (p.direction === "Bullish" ? 0.5 : p.direction === "Bearish" ? -0.5 : 0), 0);
+  const macdScore = scoreMacdState(m.line, m.histogram);
+  const score = (emaBias.includes("Bullish") ? 1 : emaBias.includes("Bearish") ? -1 : 0) +
+    (rsiBias.includes("Bullish") ? 1 : rsiBias.includes("Bearish") ? -1 : 0) +
+    (macdScore === 100 ? 1 : macdScore === 0 ? -1 : 0) +
+    patterns.slice(0, 2).reduce((s, p) => s + (p.direction === "Bullish" ? 0.5 : p.direction === "Bearish" ? -0.5 : 0), 0);
   const confluence = calculateConfluence({
     price,
     ema20: e20,
