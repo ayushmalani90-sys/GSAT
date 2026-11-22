@@ -1,11 +1,11 @@
-# GSAT free historical silver-data importer
+# GSAT free historical gold & silver data importer
 
 ## Selected source
-MetalCharts API, symbol `XAG`, daily candles only on the Free plan.
+MetalCharts API, symbols `XAG` (silver) and `XAU` (gold), daily candles on the Free plan.
 
 Current provider terms and limits:
 - Free: $0, 200 request-weight/month, 10 weight/minute, 30 days of daily history.
-- A history request costs 2 weight, so one daily XAG sync uses approximately 2 of 200 monthly weight.
+- A history request costs 2 weight. A daily sync of both metals uses 4 weight/day, about 120 weight per 30-day month, leaving about 80 weight for manual checks.
 - Commercial use is permitted, including on Free.
 - Public display of Free-tier data requires a visible attribution link to https://metalcharts.org. Private internal research does not require the credit link.
 - API keys must remain server-side. Do not commit or expose them.
@@ -21,7 +21,7 @@ The importer writes only to:
 - `research.gsat_external_candles`
 - `research.gsat_external_ingestion_runs`
 
-It never writes to `public.gsat_market_candles`. BiQuote remains the sole production calculation source. MetalCharts is a separate research benchmark only.
+It imports XAG and XAU daily bars. It never writes to `public.gsat_market_candles`. BiQuote remains the sole production calculation source. MetalCharts is a separate research benchmark only.
 
 The external table stores USD per troy ounce. Provider-reported volume is explicitly labelled as not verified exchange volume and must not be called MCX traded volume.
 
@@ -40,4 +40,4 @@ Endpoint: `https://vzwzopepgmfjylxvnltl.supabase.co/functions/v1/gsat-import-met
 The function uses Supabase's server-side Edge Function credentials and a restricted SECURITY DEFINER RPC; no direct database password or `SUPABASE_DB_URL` secret is required.
 
 ## Free-tier limitation
-Free history does not provide intraday bars or enough history for a robust short-horizon backtest. It is useful only for an initial daily overlap/data-pipeline check. Do not claim a tested procurement edge from 30 daily observations.
+Free history does not provide intraday bars or enough history for a robust short-horizon backtest. It is useful for daily cross-source checks and long-horizon context only. Do not claim a tested short-term procurement edge from 30 daily observations.
