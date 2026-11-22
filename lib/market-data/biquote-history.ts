@@ -53,7 +53,7 @@ export async function fetchBiquoteHistory<T extends BiquoteHistoryBar>(
   for (let page = 0; page < 20 && all.length < target; page += 1) {
     const url = new URL(`https://biquote.io/api/${symbol}/ohlc`);
     url.searchParams.set("interval", interval);
-    url.searchParams.set("limit", String(Math.min(2000, target - all.length)));
+    url.searchParams.set("limit", String(Math.min(1000, target - all.length)));
     if (cursor) url.searchParams.set("cursor", cursor);
     pagesRequested += 1;
     const response = await fetch(url, { cache: "no-store" });
