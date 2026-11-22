@@ -397,7 +397,7 @@ function calculateVerifiedConfluence(args: {
     coverage,
     components,
     interpretation: "Directional confluence is " + score + "/100 (" + label + ") with " + coverage +
-      "% evidence coverage. EMA weight is reduced when a period lacks the 1% seed-decay warm-up; RSI extremes are not reversal signals by themselves; MACD scoring requires zero-line and signal-line alignment. Candlestick geometry is context only. ATR is volatility only; S/R proximity, Fibonacci location and tick-volume profile are not directional signals.",
+      "% evidence coverage. This is a weighted heuristic alignment index, not a probability or forecast. EMA weight is reduced when a period lacks the 1% seed-decay warm-up; RSI extremes are not reversal signals by themselves; MACD scoring requires zero-line and signal-line alignment. Candlestick geometry is context only. ATR is volatility only; S/R proximity, Fibonacci location and tick-volume profile are not directional signals.",
   };
 }
 
