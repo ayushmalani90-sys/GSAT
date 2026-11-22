@@ -182,8 +182,8 @@ export async function GET(request: Request) {
       mtf: { gold: goldMtf, silver: silverMtf },
       methodology: {
         note: analysisSourceNote(),
-        indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.",
-        advanced: "Structural zones use confirmed pivots and distance-independent strength; Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile distributes broker/tick volume across candle ranges and calculates a 70% value area; candlestick quality is geometric and not a win probability.",
+        indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion and are withheld until seed residual weight is below 1%; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal with zero-line trend separated from signal-line momentum; ATR 14 uses True Range smoothed with Wilder RMA.",
+        advanced: "Structural zones use confirmed pivots and heuristic strength (not probability); Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile uniformly allocates broker tick-count proxy across candle high-low ranges and calculates a 70% value area; candlestick quality is geometric, not a win probability, and patterns are excluded from directional confluence.",
         dataQuality: "Only completed BiQuote candles already stored in Supabase are analyzed. No direct historical-provider request is made by this endpoint. Sample counts and coverage timestamps are returned for every timeframe. Broker tick volume is not centralized exchange volume.",
         display: "TradingView OANDA widgets remain display-only. No OANDA API is used for calculations.",
       },
