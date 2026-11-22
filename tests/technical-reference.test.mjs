@@ -28,9 +28,9 @@ test("RSI handles rising, falling, flat and insufficient series", () => {
 
 test("MACD returns zero line, signal and histogram for a flat market", () => {
   const result = indicators.macd(Array(50).fill(123.45), 12, 26, 9);
-  assert.equal(result.line, 0);
-  assert.equal(result.signal, 0);
-  assert.equal(result.histogram, 0);
+  assert.ok(Math.abs(result.line) < 1e-10);
+  assert.ok(Math.abs(result.signal) < 1e-10);
+  assert.ok(Math.abs(result.histogram) < 1e-10);
 });
 
 test("ATR uses True Range and Wilder smoothing", () => {
