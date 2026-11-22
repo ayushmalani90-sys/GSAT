@@ -21,6 +21,18 @@ This audit checks whether the wording and scoring used by GSAT are consistent wi
 
 At the latest live API check, stored BiQuote history per symbol was 673 x 15m, 288 x 1H, 212 x 4H and 505 x 1D candles. With EMA200's SMA seed, the residual seed weight after 212 candles is about 88.7%; after 288 candles about 41.5%; after 505 candles about 4.7%; after 673 candles about 0.9%. Therefore a raw EMA200 value was technically computable but not comparably warmed on 1H, 4H and 1D. GSAT now returns EMA200 as unavailable until 661 closes are present. This is a deterministic warm-up gate, not a claim that 661 candles guarantee market accuracy.
 
+
+## BiQuote history coverage finding
+
+The official BiQuote API documentation describes its OHLC series as rolling windows rather than an archive: newest 300 M1, 192 M15, 168 H1, 180 H4 and 500 D1 bars; it documents a maximum request limit of 1,000 and optional from/to parameters. Live checks on 22 November 2026 confirmed the practical limitation:
+
+- A request for XAUUSD D1 from 2024-11-22 through 2026-11-22 returned 500 bars, from 2025-04-13 through 2026-11-20—not the requested two-year start.
+- A request for XAUUSD M15 for 2024-11-22 through 2024-12-22 returned an empty bars array.
+- The M1 validation endpoint returned 301 raw / 300 normalized bars, covering only 2026-11-20 16:57–21:56 UTC, despite a 20,000-bar requested limit.
+- Production storage currently contains 673 M15, 288 H1, 212 H4 and 505 D1 bars per metal. The short intraday history is a consequence of the collector's start date, not a data-quality failure.
+
+Conclusion: a complete two-year BiQuote backfill is not currently demonstrated and the provider's published rolling-window limits do not promise it. Keep accumulating native BiQuote candles prospectively; do not insert Dukascopy or another vendor into the production calculation stream. The two-year Dukascopy dataset remains a separate research comparator only. A two-year production history for all timeframes requires either a verified BiQuote archive capability or an explicitly approved provider change with a documented source-basis transition.
+
 ## Changes made on feature branch
 
 - Added a pure helper module for EMA warm-up and MACD interpretation.
