@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "vercel-build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test tests/*.test.mjs",
+    "prevercel-build": "npm test"
   },
   "dependencies": {
     "next": "16.3.3",
