@@ -367,7 +367,9 @@ function calculateVerifiedConfluence(args: {
   const patternScore = args.patterns.length
     ? args.patterns.reduce((sum, pattern) => sum + (pattern.direction === "Bullish" ? 100 : pattern.direction === "Bearish" ? 0 : 50) * pattern.confidence, 0) /
       args.patterns.reduce((sum, pattern) => sum + pattern.confidence, 0)
-    : 50;
+    : null;
+  // No detected candle pattern is missing evidence, not a neutral directional signal.
+  // Keep the 15-point component weight in the denominator so coverage falls when absent.
   components.push({ name: "Price action", weight: 15, score: patternScore, contribution: 0 });
 
   // S/R, Fibonacci and Volume Profile are deliberately not assigned directional
