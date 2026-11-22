@@ -16,6 +16,12 @@ const DB_TIMEFRAME: Record<Timeframe, DbTimeframe> = {
   "1D": "1d",
 };
 const MAX_CANDLES = 1000;
+const SIGNAL_MAX_AGE_MS: Record<Timeframe, number> = {
+  "15m": 60 * 60 * 1000,
+  "1H": 4 * 60 * 60 * 1000,
+  "4H": 18 * 60 * 60 * 1000,
+  "1D": 72 * 60 * 60 * 1000,
+};
 
 type StoredCandleRow = {
   source: string;
@@ -156,10 +162,10 @@ export async function GET(request: Request) {
     ]);
 
     const goldMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
-      tf, { ...analyzeVerified(goldHistory[tf].candles), tradeSetup: buildTradeSetup(goldHistory[tf].candles), asOf: goldHistory[tf].newest },
+      tf, { ...analyzeVerified(goldHistory[tf].candles), tradeSetup: buildTradeSetup(goldHistory[tf].candles, { maxSignalAgeMs: SIGNAL_MAX_AGE_MS[tf] }), asOf: goldHistory[tf].newest },
     ]));
     const silverMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
-      tf, { ...analyzeVerified(silverHistory[tf].candles), tradeSetup: buildTradeSetup(silverHistory[tf].candles), asOf: silverHistory[tf].newest },
+      tf, { ...analyzeVerified(silverHistory[tf].candles), tradeSetup: buildTradeSetup(silverHistory[tf].candles, { maxSignalAgeMs: SIGNAL_MAX_AGE_MS[tf] }), asOf: silverHistory[tf].newest },
     ]));
 
     const gold = goldMtf[timeframe];
