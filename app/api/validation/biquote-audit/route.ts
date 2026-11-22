@@ -9,7 +9,7 @@ const TIMEFRAMES = ["15m", "1H", "4H", "1D"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
 type SymbolCode = "XAUUSD" | "XAGUSD";
 const MAP: Record<Timeframe, "15m" | "1h" | "4h" | "1d"> = { "15m": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
-const HISTORY_LIMIT = 20000;
+const HISTORY_LIMIT = 300;
 
 function aggregate(candles: MasterCandle[], timeframe: Timeframe): TechnicalCandle[] {
   return aggregate1mCandles(candles, MAP[timeframe]).map(({ symbol: _s, sourceInterval: _i, ...c }) => c);
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       ok: true,
       source: "BiQuote",
       timeframe,
-      calculationDataset: "normalized completed BiQuote 1m OHLC",
+      calculationDataset: "diagnostic-only normalized BiQuote 1m rolling window; never stored or used by production indicators",
       history: {
         gold: { ...gold.diagnostics, quality: validateMasterCandleSequence(gold1m), analysisSamples: goldTf.length },
         silver: { ...silver.diagnostics, quality: validateMasterCandleSequence(silver1m), analysisSamples: silverTf.length },
@@ -62,7 +62,7 @@ export async function GET(request: Request) {
           a.volatility.atr14 != null && a.supportResistance.supports.length + a.supportResistance.resistances.length > 0 &&
           a.fibonacci.levels.length > 0 && a.volumeProfile.poc != null
         ),
-        note: "Eight technical output groups are computed from the exact same normalized BiQuote 1m dataset and its deterministic higher-timeframe aggregation. This verifies dataset linkage and output completeness; it is not a claim of parity with OANDA/TradingView."
+        note: "BiQuote's 1m endpoint supplies only a short rolling window (about 300 bars), which is insufficient to build complete 15m/1H/4H/1D histories. This endpoint is diagnostic only; production indicators must use the stored native-timeframe BiQuote candles. It cannot validate TradingView/OANDA parity."
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
