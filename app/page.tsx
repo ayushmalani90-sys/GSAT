@@ -13,6 +13,7 @@ type TradeSetup = {
   riskPerUnit: number | null; rewardRiskAtTarget1: number | null; exitRules: string[]; rationale: string[]; asOf: string | null; methodology: string;
 };
 type Analysis = {
+  tradeSetup?: TradeSetup;
   price: number | null; samples: number; asOf?: string | null;
   ema: { ema20: number | null; ema50: number | null; ema200: number | null; priceVsEma20: string; priceVsEma50: string; priceVsEma200: string; bias: string; interpretation?: string };
   momentum: { rsi14: number | null; rsiBias: string; macd: number | null; macdSignal: number | null; macdHistogram: number | null; macdBias: string; interpretation?: string };
