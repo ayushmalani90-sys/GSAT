@@ -20,6 +20,11 @@ Production branch remains `main`; no changes from this branch have been promoted
 - Add a restricted SECURITY DEFINER RPC for external research imports. Execution is granted only to service_role.
 - Preserve production source policy: BiQuote spot and OHLC calculations, TradingView OANDA display-only, existing dashboard theme/layout, and 15m/1h/4h/1d.
 
+## Additional verification
+- The restricted import RPC passed a synthetic one-row OHLC smoke test (1 inserted, 0 updated, 0 rejected). The synthetic 1900-01-01 row and its audit record were deleted immediately after the test.
+- Post-test verification confirmed 0 external research candles, 0 external import runs, and 0 non-BiQuote production candles.
+- Preview-only Vercel environment variables for the Supabase project URL and public read-only key were added to branch `gsat-analyst-platform`; no production environment variables were changed.
+
 ## Not yet completed
 - Preview build/runtime validation is pending.
 - MetalCharts API key and import shared secret have not been supplied/configured. No external data rows have been imported.
