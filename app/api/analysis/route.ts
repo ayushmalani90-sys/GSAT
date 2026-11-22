@@ -1,90 +1,193 @@
 import { NextResponse } from "next/server";
 import { analyzeVerified } from "../../../lib/technical-advanced";
 import type { TechnicalCandle } from "../../../lib/technical";
-import { normalizeMasterCandles } from "../../../lib/market-data/master-ohlc";
 import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
 
-type BiquoteTick = { symbol?: string; mid?: number; bid?: number; ask?: number; dayDiffPercent?: number; timestamp?: string; stale?: boolean; marketState?: string; quoteAgeSeconds?: number };
-type CandleResponse = { bars?: Array<Record<string, unknown>>; message?: string; nextCursor?: string; next_cursor?: string };
 const TIMEFRAMES = ["15m", "1H", "4H", "1D"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
 type SymbolCode = "XAUUSD" | "XAGUSD";
+type DbTimeframe = "15m" | "1h" | "4h" | "1d";
+
+const DB_TIMEFRAME: Record<Timeframe, DbTimeframe> = {
+  "15m": "15m",
+  "1H": "1h",
+  "4H": "4h",
+  "1D": "1d",
+};
 const MAX_CANDLES = 1000;
-const TF_AGGREGATION: Record<Timeframe, "15m" | "1h" | "4h" | "1d"> = { "15m": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
 
-async function fetchHistory(symbol: SymbolCode, interval: string): Promise<TechnicalCandle[]> {
-  const all: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
-  let cursor: string | null = null;
-  for (let page = 0; page < 20 && all.length < MAX_CANDLES; page += 1) {
-    const url = new URL("https://biquote.io/api/" + symbol + "/ohlc");
-    url.searchParams.set("interval", interval);
-    url.searchParams.set("limit", String(Math.min(1000, MAX_CANDLES - all.length)));
-    if (cursor) url.searchParams.set("cursor", cursor);
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) {
-      if (all.length) break;
-      throw new Error("BiQuote " + symbol + " " + interval + " candles unavailable (" + response.status + ")");
+type StoredCandleRow = {
+  source: string;
+  candle_open: string;
+  open_price: number | string;
+  high_price: number | string;
+  low_price: number | string;
+  close_price: number | string;
+  volume: number | string | null;
+  tick_volume: number | string | null;
+};
+
+type StoredHistory = {
+  candles: TechnicalCandle[];
+  oldest: string | null;
+  newest: string | null;
+  rejectedRows: number;
+};
+
+function supabaseConfig() {
+  const url = process.env.GSAT_HISTORY_SUPABASE_URL;
+  const key = process.env.GSAT_HISTORY_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) {
+    throw new Error("Stored BiQuote history is not configured for this deployment.");
+  }
+  return { url: url.replace(/\/$/, ""), key };
+}
+
+function finite(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function fetchStoredHistory(symbol: SymbolCode, timeframe: DbTimeframe): Promise<StoredHistory> {
+  const { url: baseUrl, key } = supabaseConfig();
+  const url = new URL(baseUrl + "/rest/v1/gsat_market_candles");
+  url.searchParams.set("select", "source,candle_open,open_price,high_price,low_price,close_price,volume,tick_volume");
+  url.searchParams.set("symbol", "eq." + symbol);
+  url.searchParams.set("timeframe", "eq." + timeframe);
+  url.searchParams.set("source", "eq.BiQuote");
+  url.searchParams.set("order", "candle_open.asc");
+  url.searchParams.set("limit", String(MAX_CANDLES));
+
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: { apikey: key, accept: "application/json" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw new Error("Supabase stored " + symbol + " " + timeframe + " history failed (" +
+      response.status + "): " + (await response.text()).slice(0, 300));
+  }
+
+  const rows = await response.json() as StoredCandleRow[];
+  if (!Array.isArray(rows)) throw new Error("Stored history response was not an array");
+
+  const candles: TechnicalCandle[] = [];
+  let rejectedRows = 0;
+  for (const row of rows) {
+    const timestamp = Date.parse(row.candle_open);
+    const o = finite(row.open_price);
+    const h = finite(row.high_price);
+    const l = finite(row.low_price);
+    const c = finite(row.close_price);
+    const volume = finite(row.volume);
+    const tickVolume = finite(row.tick_volume);
+
+    if (
+      row.source !== "BiQuote" || !Number.isFinite(timestamp) ||
+      o === undefined || h === undefined || l === undefined || c === undefined ||
+      o <= 0 || h <= 0 || l <= 0 || c <= 0 ||
+      h < Math.max(o, c, l) || l > Math.min(o, c, h) ||
+      (volume !== undefined && volume < 0) ||
+      (tickVolume !== undefined && tickVolume < 0)
+    ) {
+      rejectedRows += 1;
+      continue;
     }
-    const data = (await response.json()) as CandleResponse;
-    if (!Array.isArray(data.bars) || data.bars.length === 0) break;
-    all.push(...data.bars);
-    const next = data.nextCursor ?? data.next_cursor ?? null;
-    if (!next || seen.has(next)) break;
-    seen.add(next);
-    cursor = next;
+
+    candles.push({
+      t: new Date(timestamp).toISOString(),
+      o, h, l, c,
+      ...(volume !== undefined ? { volume } : {}),
+      ...(tickVolume !== undefined ? { tickVolume } : {}),
+    });
   }
-  return normalizeMasterCandles(all, symbol).map(({ symbol: _symbol, volume, tickVolume, ...c }) => ({ ...c, volume, tickVolume }));
+
+  if (candles.length === 0) {
+    throw new Error("No valid stored BiQuote candles for " + symbol + " " + timeframe +
+      ". The collector must backfill this timeframe before analysis is available.");
+  }
+
+  return {
+    candles,
+    oldest: candles[0].t,
+    newest: candles[candles.length - 1].t,
+    rejectedRows,
+  };
 }
 
-async function fetchBiquoteTick(symbol: SymbolCode) {
-  const response = await fetch("https://biquote.io/api/" + symbol, { cache: "no-store" });
-  if (!response.ok) throw new Error("BiQuote " + symbol + " quote unavailable (" + response.status + ")");
-  const data = (await response.json()) as BiquoteTick;
-  if (!Number.isFinite(data.mid)) throw new Error("BiQuote returned an invalid " + symbol + " mid price");
-  return data;
+async function fetchAllStoredTimeframes(symbol: SymbolCode) {
+  const entries = await Promise.all(TIMEFRAMES.map(async (timeframe) => {
+    const history = await fetchStoredHistory(symbol, DB_TIMEFRAME[timeframe]);
+    return [timeframe, history] as const;
+  }));
+  return Object.fromEntries(entries) as Record<Timeframe, StoredHistory>;
 }
 
-async function buildMtf(symbol: SymbolCode) {
-  const out: Record<string, ReturnType<typeof analyzeVerified>> = {};
-  for (const tf of TIMEFRAMES) {
-    const candles = await fetchHistory(symbol, TF_AGGREGATION[tf]);
-    out[tf] = analyzeVerified(candles);
-  }
-  return out;
+function coverage(history: Record<Timeframe, StoredHistory>) {
+  return Object.fromEntries(TIMEFRAMES.map((timeframe) => {
+    const item = history[timeframe];
+    return [timeframe, {
+      samples: item.candles.length,
+      oldest: item.oldest,
+      newest: item.newest,
+      rejectedRows: item.rejectedRows,
+    }];
+  }));
 }
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const timeframeParam = params.get("timeframe") ?? "1H";
-  if (!(TIMEFRAMES as readonly string[]).includes(timeframeParam)) return NextResponse.json({ error: "Unsupported timeframe: " + timeframeParam }, { status: 400 });
+  if (!(TIMEFRAMES as readonly string[]).includes(timeframeParam)) {
+    return NextResponse.json({ error: "Unsupported timeframe: " + timeframeParam }, { status: 400 });
+  }
+
   const timeframe = timeframeParam as Timeframe;
   try {
-    const [goldCandles, silverCandles, goldTick, silverTick, goldMtf, silverMtf] = await Promise.all([
-      fetchHistory("XAUUSD", TF_AGGREGATION[timeframe]),
-      fetchHistory("XAGUSD", TF_AGGREGATION[timeframe]),
-      fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
-      buildMtf("XAUUSD"), buildMtf("XAGUSD"),
+    const [goldHistory, silverHistory] = await Promise.all([
+      fetchAllStoredTimeframes("XAUUSD"),
+      fetchAllStoredTimeframes("XAGUSD"),
     ]);
-    const gold = analyzeVerified(goldCandles), silver = analyzeVerified(silverCandles);
-    const sourceMode = "biquote-native-timeframe";
+
+    const goldMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
+      tf, analyzeVerified(goldHistory[tf].candles),
+    ]));
+    const silverMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
+      tf, analyzeVerified(silverHistory[tf].candles),
+    ]));
+
+    const gold = goldMtf[timeframe];
+    const silver = silverMtf[timeframe];
+    const goldCoverage = coverage(goldHistory);
+    const silverCoverage = coverage(silverHistory);
+
     return NextResponse.json({
-      source: ANALYSIS_SOURCE_POLICY.liveQuotes,
-      dataArchitecture: sourceMode,
-      generatedAt: new Date().toISOString(), timeframe,
-      feed: { gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" }, silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" } },
-      history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, target: MAX_CANDLES },
-      gold: { intraday: gold }, silver: { intraday: silver },
+      source: ANALYSIS_SOURCE_POLICY.ohlc,
+      dataArchitecture: "supabase-stored-biquote-ohlc",
+      generatedAt: new Date().toISOString(),
+      timeframe,
+      history: {
+        gold: goldCoverage,
+        silver: silverCoverage,
+        maxSamplesPerTimeframe: MAX_CANDLES,
+        storageSource: "public.gsat_market_candles",
+      },
+      gold: { intraday: gold },
+      silver: { intraday: silver },
       mtf: { gold: goldMtf, silver: silverMtf },
       methodology: {
         note: analysisSourceNote(),
         indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.",
         advanced: "Structural zones use confirmed pivots and distance-independent strength; Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile distributes broker/tick volume across candle ranges and calculates a 70% value area; candlestick quality is geometric and not a win probability.",
-        dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.",
-        display: "TradingView OANDA widgets remain display-only. No OANDA API is used.",
+        dataQuality: "Only completed BiQuote candles already stored in Supabase are analyzed. No direct historical-provider request is made by this endpoint. Sample counts and coverage timestamps are returned for every timeframe. Broker tick volume is not centralized exchange volume.",
+        display: "TradingView OANDA widgets remain display-only. No OANDA API is used for calculations.",
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "BiQuote analysis unavailable" }, { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } });
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Stored BiQuote analysis unavailable",
+      dataArchitecture: "supabase-stored-biquote-ohlc",
+    }, { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 }
