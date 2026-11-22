@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { analyzeVerified } from "../../../lib/technical-advanced";
+import { buildTradeSetup } from "../../../lib/breakout-trade-engine";
 import type { TechnicalCandle } from "../../../lib/technical";
 import { ANALYSIS_SOURCE_POLICY, analysisSourceNote } from "../../../lib/analysis-source-policy";
 
@@ -155,10 +156,10 @@ export async function GET(request: Request) {
     ]);
 
     const goldMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
-      tf, { ...analyzeVerified(goldHistory[tf].candles), asOf: goldHistory[tf].newest },
+      tf, { ...analyzeVerified(goldHistory[tf].candles), tradeSetup: buildTradeSetup(goldHistory[tf].candles), asOf: goldHistory[tf].newest },
     ]));
     const silverMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
-      tf, { ...analyzeVerified(silverHistory[tf].candles), asOf: silverHistory[tf].newest },
+      tf, { ...analyzeVerified(silverHistory[tf].candles), tradeSetup: buildTradeSetup(silverHistory[tf].candles), asOf: silverHistory[tf].newest },
     ]));
 
     const gold = goldMtf[timeframe];
@@ -184,6 +185,7 @@ export async function GET(request: Request) {
         note: analysisSourceNote(),
         indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion and are withheld until seed residual weight is below 1%; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal with zero-line trend separated from signal-line momentum; ATR 14 uses True Range smoothed with Wilder RMA.",
         advanced: "Structural zones use confirmed pivots and heuristic strength (not probability); Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile uniformly allocates broker tick-count proxy across candle high-low ranges and calculates a 70% value area; candlestick quality is geometric, not a win probability, and patterns are excluded from directional confluence.",
+        tradeSetup: "Breakout setups use a 20-bar prior range, 0.10 ATR close buffer, RSI/MACD directional momentum alignment, a next-bar stop-entry trigger, structural/ATR stop, and 2R/3R targets. Tick volume is optional broker activity context, not exchange volume. No entry is issued without confirmation; this is a rules-based setup, not a forecast.",
         dataQuality: "Only completed BiQuote candles already stored in Supabase are analyzed. No direct historical-provider request is made by this endpoint. Sample counts and coverage timestamps are returned for every timeframe. Broker tick volume is not centralized exchange volume.",
         display: "TradingView OANDA widgets remain display-only. No OANDA API is used for calculations.",
       },
