@@ -18,17 +18,19 @@ Production branch remains `main`; no changes from this branch have been promoted
 - Decouple quote refresh (30s) from analysis refresh (5m).
 - Refactor MetalCharts importer to use Supabase built-in Edge Function server credentials plus restricted RPC; removes the incorrect assumption that `SUPABASE_DB_URL` is available in the Edge Function runtime.
 - Add a restricted SECURITY DEFINER RPC for external research imports. Execution is granted only to service_role.
+- Extend the MetalCharts Free-tier importer to both XAG and XAU daily candles. A daily sync of both symbols costs 4 of 200 monthly request-weight (about 120/month); no paid plan is required for this daily-only research lane.
+- Deploy `gsat-import-metalcharts-research` version 3; it uses the service-side Supabase REST RPC and imports both metals independently so one symbol's failure does not discard the other's successful import.
 - Preserve production source policy: BiQuote spot and OHLC calculations, TradingView OANDA display-only, existing dashboard theme/layout, and 15m/1h/4h/1d.
 
 ## Additional verification
-- The restricted import RPC passed a synthetic one-row OHLC smoke test (1 inserted, 0 updated, 0 rejected). The synthetic 1900-01-01 row and its audit record were deleted immediately after the test.
+- The restricted import RPC passed synthetic one-row OHLC smoke tests for both XAG and XAU (each 1 inserted, 0 updated, 0 rejected). Both synthetic rows and their audit records were deleted immediately after testing.
 - Post-test verification confirmed 0 external research candles, 0 external import runs, and 0 non-BiQuote production candles.
 - Preview-only Vercel environment variables for the Supabase project URL and public read-only key were added to branch `gsat-analyst-platform`; no production environment variables were changed.
 
 ## Not yet completed
 - Vercel preview build for commit `0995172faeb80a2c6fe7f7e67ae1bec0219e2438` completed successfully; Next.js compilation and TypeScript checks passed. Preview URL: `https://gsat-lwq4ujert-ayushmalani90-1416s-projects.vercel.app`.
 - Database RLS was tested as the `anon` role: all eight BiQuote symbol/timeframe partitions are readable (673/288/212/505 candles per symbol), while the private `research` schema is not granted to anon. A live HTTP smoke test of the preview `/api/analysis` route is still outstanding.
-- MetalCharts API key and import shared secret have not been supplied/configured. No external data rows have been imported.
+- MetalCharts API key and import shared secret have not been supplied/configured. No external data rows have been imported. Importer supports both gold and silver daily data.
 - Stored-history analysis may return 502 if a symbol/timeframe has no valid stored rows; it intentionally does not silently fall back to a live unpersisted feed.
 - Current database coverage remains limited, especially intraday; deeper backtesting needs a longer licensed dataset.
 - No predictive model or signal should be called validated until walk-forward/out-of-sample backtests, fees/slippage, drawdowns, and baselines are documented.
