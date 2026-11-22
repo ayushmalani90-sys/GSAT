@@ -35,6 +35,7 @@ At the latest live API check, stored BiQuote history per symbol was 673 x 15m, 2
 ## Not yet validated
 
 - This audit does not establish exact TradingView/OANDA parity. The display feed and BiQuote calculation feed are different providers. Exact parity requires identical OHLC arrays and identical warm-up/startup conventions.
+- Confluence weights and label thresholds are GSAT design heuristics, not an externally standardized scale; the score is not a probability or forecast and has not been calibrated to out-of-sample outcomes.
 - No profitability claim is made for any pattern, confluence threshold, support/resistance rule, or procurement strategy.
 - Indian landed purchase cost remains unmodelled until USD/INR, MCX basis, local wholesale premium, GST, freight and making/assay costs are incorporated.
 - The preview endpoint was runtime-checked before these new changes; the new commit still needs a fresh build and endpoint smoke test.
