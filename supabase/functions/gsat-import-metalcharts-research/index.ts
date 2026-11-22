@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
+type MetalSymbol = "XAG" | "XAU";
 type HistoryBar = { timestamp?: unknown; open?: unknown; high?: unknown; low?: unknown; close?: unknown; volume?: unknown };
 
 function json(data: unknown, status = 200): Response {
@@ -40,6 +41,63 @@ async function callSupabaseImport(credentials: { url: string; key: string }, bod
   return responseText ? JSON.parse(responseText) : null;
 }
 
+async function importMetal(symbol: MetalSymbol, apiKey: string, credentials: { url: string; key: string }) {
+  const url = new URL("https://api.metalcharts.org/v1/history/" + symbol);
+  url.searchParams.set("range", "1M");
+  url.searchParams.set("interval", "1d");
+  url.searchParams.set("currency", "USD");
+  url.searchParams.set("unit", "toz");
+  const response = await fetch(url, {
+    headers: { authorization: "Bearer " + apiKey, accept: "application/json" },
+    signal: AbortSignal.timeout(25_000),
+  });
+  if (!response.ok) throw new Error("MetalCharts " + symbol + " HTTP " + response.status + ": " + (await response.text()).slice(0, 400));
+
+  const payload = await response.json() as {
+    success?: boolean; data?: HistoryBar[]; count?: number; startDate?: string; endDate?: string;
+    currency?: string; unit?: string; source?: string; _rid?: string;
+  };
+  if (payload.success !== true || !Array.isArray(payload.data)) throw new Error("Unexpected MetalCharts " + symbol + " history response");
+
+  const rows: Array<{
+    candle_open: string; open_price: number; high_price: number; low_price: number;
+    close_price: number; volume: number | null; raw_payload: HistoryBar;
+  }> = [];
+  let rejected = 0;
+  for (const bar of payload.data) {
+    const timestamp = typeof bar.timestamp === "string" ? Date.parse(bar.timestamp) : NaN;
+    const open = finiteNumber(bar.open), high = finiteNumber(bar.high), low = finiteNumber(bar.low);
+    const close = finiteNumber(bar.close), volume = finiteNumber(bar.volume);
+    if (!Number.isFinite(timestamp) || open === null || high === null || low === null || close === null ||
+        open <= 0 || high <= 0 || low <= 0 || close <= 0 ||
+        high < Math.max(open, close, low) || low > Math.min(open, close, high) ||
+        (volume !== null && volume < 0)) { rejected += 1; continue; }
+    rows.push({
+      candle_open: new Date(timestamp).toISOString(),
+      open_price: open, high_price: high, low_price: low, close_price: close,
+      volume, raw_payload: bar,
+    });
+  }
+  if (rows.length === 0) throw new Error("MetalCharts returned no valid " + symbol + " daily candles");
+
+  const startMs = Math.min(...rows.map(row => Date.parse(row.candle_open)));
+  const endMs = Math.max(...rows.map(row => Date.parse(row.candle_open)));
+  const result = await callSupabaseImport(credentials, {
+    p_symbol: symbol,
+    p_rows: rows,
+    p_fetched_count: payload.data.length,
+    p_rejected_count: rejected,
+    p_request_weight: 2,
+    p_requested_start: new Date(startMs).toISOString(),
+    p_requested_end: new Date(endMs).toISOString(),
+  });
+  return {
+    success: true, symbol, timeframe: "1d",
+    fetched: payload.data.length, valid: rows.length, rejected, import: result,
+    providerSource: payload.source ?? null, providerRequestId: payload._rid ?? null,
+  };
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json({ error: "POST required" }, 405);
   const importSecret = Deno.env.get("GSAT_RESEARCH_IMPORT_SECRET");
@@ -53,64 +111,22 @@ Deno.serve(async (request: Request) => {
   try { credentials = getSupabaseCredentials(); }
   catch (error) { return json({ error: error instanceof Error ? error.message : String(error) }, 503); }
 
-  try {
-    const url = new URL("https://api.metalcharts.org/v1/history/XAG");
-    url.searchParams.set("range", "1M");
-    url.searchParams.set("interval", "1d");
-    url.searchParams.set("currency", "USD");
-    url.searchParams.set("unit", "toz");
-    const response = await fetch(url, {
-      headers: { authorization: "Bearer " + apiKey, accept: "application/json" },
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!response.ok) throw new Error("MetalCharts HTTP " + response.status + ": " + (await response.text()).slice(0, 500));
-
-    const payload = await response.json() as {
-      success?: boolean; data?: HistoryBar[]; count?: number; startDate?: string; endDate?: string;
-      currency?: string; unit?: string; source?: string; _rid?: string;
-    };
-    if (payload.success !== true || !Array.isArray(payload.data)) throw new Error("Unexpected MetalCharts history response shape");
-
-    const rows: Array<{
-      candle_open: string; open_price: number; high_price: number; low_price: number;
-      close_price: number; volume: number | null; raw_payload: HistoryBar;
-    }> = [];
-    let rejected = 0;
-    for (const bar of payload.data) {
-      const timestamp = typeof bar.timestamp === "string" ? Date.parse(bar.timestamp) : NaN;
-      const open = finiteNumber(bar.open), high = finiteNumber(bar.high), low = finiteNumber(bar.low);
-      const close = finiteNumber(bar.close), volume = finiteNumber(bar.volume);
-      if (!Number.isFinite(timestamp) || open === null || high === null || low === null || close === null ||
-          open <= 0 || high <= 0 || low <= 0 || close <= 0 ||
-          high < Math.max(open, close, low) || low > Math.min(open, close, high) ||
-          (volume !== null && volume < 0)) { rejected += 1; continue; }
-      rows.push({
-        candle_open: new Date(timestamp).toISOString(),
-        open_price: open, high_price: high, low_price: low, close_price: close,
-        volume, raw_payload: bar,
-      });
-    }
-    if (rows.length === 0) throw new Error("MetalCharts returned no valid XAG daily candles");
-
-    const startMs = Math.min(...rows.map(row => Date.parse(row.candle_open)));
-    const endMs = Math.max(...rows.map(row => Date.parse(row.candle_open)));
-    const result = await callSupabaseImport(credentials, {
-      p_rows: rows,
-      p_fetched_count: payload.data.length,
-      p_rejected_count: rejected,
-      p_request_weight: 2,
-      p_requested_start: new Date(startMs).toISOString(),
-      p_requested_end: new Date(endMs).toISOString(),
-    });
-    return json({
-      success: true, source: "MetalCharts", symbol: "XAG", timeframe: "1d",
-      currency: payload.currency ?? "USD", unit: payload.unit ?? "toz",
-      providerSource: payload.source ?? null, providerRequestId: payload._rid ?? null,
-      fetched: payload.data.length, valid: rows.length, rejected, import: result,
-      productionCandlesTouched: false, attributionRequiredForPublicDisplay: true,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return json({ success: false, error: message, productionCandlesTouched: false }, 502);
+  const results: Array<Record<string, unknown>> = [];
+  for (const symbol of ["XAG", "XAU"] as const) {
+    try { results.push(await importMetal(symbol, apiKey, credentials)); }
+    catch (error) { results.push({ success: false, symbol, error: error instanceof Error ? error.message : String(error) }); }
   }
+  const successful = results.filter(result => result.success === true).length;
+  const failed = results.length - successful;
+  return json({
+    success: failed === 0,
+    partial: successful > 0 && failed > 0,
+    source: "MetalCharts",
+    timeframe: "1d",
+    symbols: ["XAG", "XAU"],
+    results,
+    requestWeightUsed: successful * 2,
+    productionCandlesTouched: false,
+    attributionRequiredForPublicDisplay: true,
+  }, successful === 0 ? 502 : failed > 0 ? 207 : 200);
 });
