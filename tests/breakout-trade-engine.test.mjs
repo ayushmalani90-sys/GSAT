@@ -60,3 +60,12 @@ test("invalid candle data is filtered and missing momentum never produces an ent
   assert.equal(result.status, "WAIT_FOR_BREAKOUT");
   assert.equal(result.entry.price, null);
 });
+
+test("stale candles never produce an actionable entry", () => {
+  const closes = Array.from({length: 100}, (_, i) => 100 + i * 0.12 + Math.sin(i / 2) * 0.15);
+  const bars = candlesFromCloses(closes);
+  const result = engine.buildTradeSetup(bars, { maxSignalAgeMs: 1 });
+  assert.equal(result.status, "STALE_DATA");
+  assert.equal(result.entry.type, "NONE");
+  assert.equal(result.entry.price, null);
+});
