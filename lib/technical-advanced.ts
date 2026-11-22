@@ -158,8 +158,12 @@ export function verifiedFibonacci(candles: TechnicalCandle[], current: number) {
     levels,
     direction: upswing ? "Upswing" : "Downswing",
     anchors: { startIndex: start.index, endIndex: end.index },
-    interpretation: (upswing ? "Most recent qualifying confirmed upswing" : "Most recent qualifying confirmed downswing") +
-      "; nearest retracement is " + nearest.ratio + " at " + nearest.price + ". A level is context, not a trade signal.",
+    interpretation: current < swingLow
+      ? "Price is below the selected swing low; this swing leg has been fully retraced and is invalidated. Nearest historical Fibonacci level is " + nearest.ratio + " at " + nearest.price + "."
+      : current > swingHigh
+        ? "Price is above the selected swing high; the retracement levels are historical context below current price. Nearest level is " + nearest.ratio + " at " + nearest.price + "."
+        : (upswing ? "Most recent qualifying confirmed upswing" : "Most recent qualifying confirmed downswing") +
+          "; price remains within the swing range and is nearest to the " + nearest.ratio + " retracement at " + nearest.price + ". A level is context, not a trade signal.",
   };
 }
 
@@ -301,7 +305,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       direction: "Bullish",
       confidence: quality,
       description: "A completed bullish body engulfs the prior bearish body; quality score reflects body expansion and close location, not win probability.",
-      confirmation: "Pattern is confirmed by the completed engulfing candle close.",
+      confirmation: "Formation is complete; bullish follow-through requires a later completed candle to close above " + round(last.h) + ".",
       invalidation: "A later completed candle closing below " + round(last.l) + " invalidates this candle pattern.",
     });
   }
@@ -315,7 +319,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       direction: "Bearish",
       confidence: quality,
       description: "A completed bearish body engulfs the prior bullish body; quality score reflects body expansion and close location, not win probability.",
-      confirmation: "Pattern is confirmed by the completed engulfing candle close.",
+      confirmation: "Formation is complete; bearish follow-through requires a later completed candle to close below " + round(last.l) + ".",
       invalidation: "A later completed candle closing above " + round(last.h) + " invalidates this candle pattern.",
     });
   }
@@ -327,7 +331,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       direction: "Bullish",
       confidence: quality,
       description: "A long lower wick with a close in the upper part of the completed candle shows rejection of lower prices; quality score is geometric, not win probability.",
-      confirmation: "The rejection candle has closed in its upper range.",
+      confirmation: "Formation is complete; bullish follow-through requires a later completed candle to close above " + round(last.h) + ".",
       invalidation: "A later completed candle closing below " + round(last.l) + " invalidates this rejection.",
     });
   }
@@ -339,7 +343,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       direction: "Bearish",
       confidence: quality,
       description: "A long upper wick with a close in the lower part of the completed candle shows rejection of higher prices; quality score is geometric, not win probability.",
-      confirmation: "The rejection candle has closed in its lower range.",
+      confirmation: "Formation is complete; bearish follow-through requires a later completed candle to close below " + round(last.l) + ".",
       invalidation: "A later completed candle closing above " + round(last.h) + " invalidates this rejection.",
     });
   }
