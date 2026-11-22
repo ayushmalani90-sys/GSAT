@@ -155,10 +155,10 @@ export async function GET(request: Request) {
     ]);
 
     const goldMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
-      tf, analyzeVerified(goldHistory[tf].candles),
+      tf, { ...analyzeVerified(goldHistory[tf].candles), asOf: goldHistory[tf].newest },
     ]));
     const silverMtf = Object.fromEntries(TIMEFRAMES.map((tf) => [
-      tf, analyzeVerified(silverHistory[tf].candles),
+      tf, { ...analyzeVerified(silverHistory[tf].candles), asOf: silverHistory[tf].newest },
     ]));
 
     const gold = goldMtf[timeframe];
