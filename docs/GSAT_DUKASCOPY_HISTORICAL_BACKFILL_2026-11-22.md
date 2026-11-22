@@ -34,6 +34,17 @@ All rows passed OHLC validation (0 invalid rows). The provider volume field is s
 
 The high run count is because the database RPC logs each 100-row write batch as a separate run, not because 1,404 separate provider downloads occurred.
 
+## Timestamp continuity review
+
+The two-year series shows recurring session closures rather than random missing-data patterns:
+
+- 15m: 46,656 consecutive 15-minute intervals for silver; 393 recurring 1h15m breaks, 93 weekend-sized gaps around 2d1h15m, and 2 closures longer than 3 days.
+- 1h: 11,285 consecutive hourly intervals; 395 recurring 2-hour session breaks, 93 weekend-sized gaps around 2d2h, and 2 closures longer than 3 days.
+- 4h: 3,082 consecutive 4-hour intervals; 97 weekend-sized 2-day gaps, plus a small number of holiday/session variations.
+- 1d: 518 consecutive daily intervals, 102 two-day gaps and 2 three-day gaps. The provider's daily series contains six trading days per week (Sunday through Friday in UTC); Saturday is the regular closed day.
+
+Gold follows the same session pattern. These are not automatically data defects. A backtest must respect the market calendar and must not forward-fill closed sessions as if they were tradable candles.
+
 ## BiQuote overlap validation
 
 Daily comparison matched 505 timestamps per metal from 2025-04-06 through 2026-11-19.
