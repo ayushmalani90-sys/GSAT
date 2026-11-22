@@ -33,6 +33,14 @@ test("MACD returns zero line, signal and histogram for a flat market", () => {
   assert.ok(Math.abs(result.histogram) < 1e-10);
 });
 
+test("MACD uses 12/26 EMA line and 9-period EMA signal on a varying series", () => {
+  const closes = Array.from({ length: 60 }, (_, i) => 100 + i * 0.7 + Math.sin(i / 3) * 2);
+  const result = indicators.macd(closes, 12, 26, 9);
+  assert.ok(Math.abs(result.line - 4.944611967270987) < 1e-10);
+  assert.ok(Math.abs(result.signal - 4.723933079722459) < 1e-10);
+  assert.ok(Math.abs(result.histogram - 0.22067888754852838) < 1e-10);
+});
+
 test("ATR uses True Range and Wilder smoothing", () => {
   const candles = Array.from({ length: 15 }, (_, i) => ({
     t: new Date(Date.UTC(2026, 0, 1, i)).toISOString(),
