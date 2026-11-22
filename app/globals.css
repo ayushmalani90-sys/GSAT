@@ -54,3 +54,21 @@ button { cursor: pointer; }
   .gsat-spot-grid, .gsat-chart-grid, .gsat-technical-columns { grid-template-columns: 1fr !important; }
   .gsat-timeframe-wrap { align-items: flex-start !important; flex-direction: column !important; }
 }
+
+
+/* Breakout and trade-plan panel */
+.gsat-trade-card { margin-top: 14px; padding: 16px; border: 1px solid #29415e; border-radius: 16px; background: linear-gradient(145deg,#0a1a2d,#081321); }
+.gsat-trade-status { display:inline-flex; padding:6px 10px; border-radius:999px; font-size:10px; font-weight:800; letter-spacing:.06em; border:1px solid #344b64; }
+.gsat-trade-status.positive { color:#8de0b2; border-color:#286247; background:#0b2a21; }
+.gsat-trade-status.neutral { color:#e8c878; border-color:#705b2c; background:#292211; }
+.gsat-trade-status.negative { color:#f19a9a; border-color:#713b43; background:#2b151b; }
+.gsat-trade-direction { font-size:20px; font-weight:850; letter-spacing:.04em; margin:14px 0; color:#f0d18a; }
+.gsat-trade-grid,.gsat-trade-levels { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.gsat-trade-grid > div,.gsat-trade-levels > div { min-width:0; padding:10px; border:1px solid #203652; border-radius:10px; background:#09182a; }
+.gsat-trade-grid span,.gsat-trade-levels span { display:block; color:#91a5bc; font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
+.gsat-trade-grid strong,.gsat-trade-levels strong { display:block; margin-top:6px; color:#f0f4fa; font-size:16px; overflow-wrap:anywhere; }
+.gsat-trade-levels { margin-top:9px; grid-template-columns:repeat(4,minmax(0,1fr)); }
+.gsat-trade-levels small { display:block; margin-top:6px; color:#91a5bc; font-size:10px; line-height:1.4; }
+.gsat-trade-detail { display:grid; gap:6px; margin-top:12px; color:#aebed0; font-size:12px; line-height:1.45; }
+.gsat-trade-detail strong { color:#e8eef7; font-size:12px; }
+@media(max-width:900px){.gsat-trade-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.gsat-trade-levels{grid-template-columns:repeat(2,minmax(0,1fr));}}
