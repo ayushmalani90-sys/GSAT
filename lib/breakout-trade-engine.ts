@@ -5,7 +5,7 @@ export type TradeCandle = {
   volume?: number; tickVolume?: number;
 };
 export type TradeSetup = {
-  status: "CONFIRMED" | "WAIT_FOR_BREAKOUT" | "WAIT_FOR_MOMENTUM" | "EXTENDED_NO_CHASE" | "INSUFFICIENT_DATA" | "NO_VALID_RISK";
+  status: "CONFIRMED" | "WAIT_FOR_BREAKOUT" | "WAIT_FOR_MOMENTUM" | "EXTENDED_NO_CHASE" | "INSUFFICIENT_DATA" | "NO_VALID_RISK" | "STALE_DATA";
   direction: "LONG" | "SHORT" | "NONE";
   breakoutLevel: number | null;
   breakoutClose: number | null;
@@ -37,7 +37,7 @@ const empty = (status: TradeSetup["status"], note: string): TradeSetup => ({
  * bar as the confirmation bar. Tick count is a broker activity proxy, never
  * represented as centralized traded volume.
  */
-export function buildTradeSetup(input: TradeCandle[], options: { lookback?: number; rewardRisk?: number; extensionAtr?: number } = {}): TradeSetup {
+export function buildTradeSetup(input: TradeCandle[], options: { lookback?: number; rewardRisk?: number; extensionAtr?: number; maxSignalAgeMs?: number } = {}): TradeSetup {
   const lookback = options.lookback ?? 20;
   const rr1 = options.rewardRisk ?? 2;
   const extensionAtr = options.extensionAtr ?? 1.25;
@@ -76,7 +76,7 @@ export function buildTradeSetup(input: TradeCandle[], options: { lookback?: numb
 
   const direction = longBreak ? "LONG" : shortBreak ? "SHORT" : "NONE";
   const breakout = direction !== "NONE";
-  const aligned = direction === "LONG" ? longMomentum : direction === "SHORT" ? shortMomentum : false;
+  const aligned = direction === "LONG" ? longMomentum : direction === "SHORT" ? shortMomentum : longMomentum || shortMomentum;
   const breakoutLevel = direction === "LONG" ? priorHigh : direction === "SHORT" ? priorLow : null;
   const distance = breakoutLevel == null ? 0 : Math.abs(last.c - breakoutLevel);
   const extended = breakout && distance > atrNow * extensionAtr;
@@ -99,6 +99,17 @@ export function buildTradeSetup(input: TradeCandle[], options: { lookback?: numb
     momentum: { ...common.momentum, note: momentumNote },
     rationale: ["No completed candle close beyond the prior 20-bar high/low plus the ATR buffer.", aligned ? "Momentum is aligned, but there is no breakout trigger." : "RSI/MACD do not currently meet the directional momentum rules."],
   };
+  const maxSignalAgeMs = options.maxSignalAgeMs ?? Number.POSITIVE_INFINITY;
+  const ageMs = Date.now() - Date.parse(last.t);
+  if (Number.isFinite(maxSignalAgeMs) && ageMs > maxSignalAgeMs) {
+    return {
+      ...empty("STALE_DATA", "Latest completed candle is too old for a fresh trade setup."),
+      ...common,
+      direction,
+      entry: { type: "NONE", price: null, instruction: "No entry. Wait for a fresh completed candle and a new confirmation." },
+      rationale: ["Signal data is stale (" + Math.round(ageMs / 3_600_000) + " hours since the latest completed candle).", "Historical breakout conditions are not a current entry instruction."],
+    };
+  }
   if (!aligned) return {
     ...empty("WAIT_FOR_MOMENTUM", "Price broke the range, but RSI and MACD do not confirm direction."),
     ...common,
