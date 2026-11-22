@@ -1,4 +1,5 @@
 import { atr, ema, macd, rma, rsi } from "./technical-reference";
+import { classifyMacdState, hasEmaWarmup } from "./technical-interpretation";
 
 export type TechnicalCandle = { t: string; o: number; h: number; l: number; c: number; volume?: number; tickVolume?: number };
 export type Level = { price: number; strength: number; touches: number; distancePct: number };
@@ -215,15 +216,19 @@ export function analyze(candles: TechnicalCandle[]): TechnicalAnalysis {
   const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
   const closes = sorted.map(c => c.c).filter(Number.isFinite);
   const price = closes.at(-1) ?? null;
-  const e20 = ema(closes, 20), e50 = ema(closes, 50), e200 = ema(closes, 200);
+  // Require the initial SMA seed's residual influence to fall below 1%.
+  // This prevents a barely-available EMA200 from being presented as fully warmed.
+  const e20 = hasEmaWarmup(closes.length, 20) ? ema(closes, 20) : null;
+  const e50 = hasEmaWarmup(closes.length, 50) ? ema(closes, 50) : null;
+  const e200 = hasEmaWarmup(closes.length, 200) ? ema(closes, 200) : null;
   const relation = (e: number | null): TechnicalAnalysis["ema"]["priceVsEma20"] => price == null || e == null ? "Unavailable" : Math.abs(price - e) < 1e-8 ? "At" : price > e ? "Above" : "Below";
   const bullish = [e20, e50, e200].filter(e => price != null && e != null && price > e).length;
   const bearish = [e20, e50, e200].filter(e => price != null && e != null && price < e).length;
   const emaBias = bullish >= 2 ? "Bullish EMA structure" : bearish >= 2 ? "Bearish EMA structure" : "Mixed EMA structure";
   const rsi14 = rsi(closes, 14);
-  const rsiBias = rsi14 == null ? "RSI unavailable" : rsi14 >= 70 ? "Overbought momentum" : rsi14 <= 30 ? "Oversold momentum" : rsi14 >= 50 ? "Bullish momentum" : "Bearish momentum";
+  const rsiBias = rsi14 == null ? "RSI unavailable" : rsi14 >= 70 ? "Overbought condition" : rsi14 <= 30 ? "Oversold condition" : rsi14 >= 50 ? "Bullish momentum" : "Bearish momentum";
   const m = macd(closes, 12, 26, 9);
-  const macdBias = m.histogram == null ? "MACD unavailable" : m.histogram > 0 ? "Bullish MACD momentum" : m.histogram < 0 ? "Bearish MACD momentum" : "Neutral MACD momentum";
+  const macdBias = classifyMacdState(m.line, m.histogram);
   const atr14 = atr(sorted, 14);
   const atrPercent = price != null && atr14 != null && price !== 0 ? atr14 / Math.abs(price) * 100 : null;
   const sr = price != null ? supportResistance(sorted, price, atr14) : { supports: [], resistances: [], method: "Price unavailable." };
