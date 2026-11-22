@@ -304,7 +304,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       name: "Bullish Engulfing",
       direction: "Bullish",
       confidence: quality,
-      description: "A completed bullish body engulfs the prior bearish body; quality score reflects body expansion and close location, not win probability.",
+      description: "A completed bullish body engulfs the prior bearish body; quality score reflects body expansion and close location, not win probability. The detector does not establish prior-trend context; later-candle follow-through is still required.",
       confirmation: "Formation is complete; bullish follow-through requires a later completed candle to close above " + round(last.h) + ".",
       invalidation: "A later completed candle closing below " + round(last.l) + " invalidates this candle pattern.",
     });
@@ -318,7 +318,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       name: "Bearish Engulfing",
       direction: "Bearish",
       confidence: quality,
-      description: "A completed bearish body engulfs the prior bullish body; quality score reflects body expansion and close location, not win probability.",
+      description: "A completed bearish body engulfs the prior bullish body; quality score reflects body expansion and close location, not win probability. The detector does not establish prior-trend context; later-candle follow-through is still required.",
       confirmation: "Formation is complete; bearish follow-through requires a later completed candle to close below " + round(last.l) + ".",
       invalidation: "A later completed candle closing above " + round(last.h) + " invalidates this candle pattern.",
     });
@@ -330,7 +330,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       name: "Bullish Rejection",
       direction: "Bullish",
       confidence: quality,
-      description: "A long lower wick with a close in the upper part of the completed candle shows rejection of lower prices; quality score is geometric, not win probability.",
+      description: "A long lower wick with a close in the upper part of the completed candle shows rejection of lower prices; quality score is geometric, not win probability. The detector does not check prior trend or support location; later-candle follow-through is still required.",
       confirmation: "Formation is complete; bullish follow-through requires a later completed candle to close above " + round(last.h) + ".",
       invalidation: "A later completed candle closing below " + round(last.l) + " invalidates this rejection.",
     });
@@ -342,7 +342,7 @@ export function verifiedPatterns(candles: TechnicalCandle[]) {
       name: "Bearish Rejection",
       direction: "Bearish",
       confidence: quality,
-      description: "A long upper wick with a close in the lower part of the completed candle shows rejection of higher prices; quality score is geometric, not win probability.",
+      description: "A long upper wick with a close in the lower part of the completed candle shows rejection of higher prices; quality score is geometric, not win probability. The detector does not check prior trend or resistance location; later-candle follow-through is still required.",
       confirmation: "Formation is complete; bearish follow-through requires a later completed candle to close below " + round(last.l) + ".",
       invalidation: "A later completed candle closing above " + round(last.h) + " invalidates this rejection.",
     });
