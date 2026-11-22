@@ -80,11 +80,10 @@ export function buildTradeSetup(input: TradeCandle[], options: { lookback?: numb
   const breakoutLevel = direction === "LONG" ? priorHigh : direction === "SHORT" ? priorLow : null;
   const distance = breakoutLevel == null ? 0 : Math.abs(last.c - breakoutLevel);
   const extended = breakout && distance > atrNow * extensionAtr;
-  const momentumNote = tickRatio == null
-    ? "Momentum is evaluated with RSI and MACD; tick-activity confirmation is unavailable."
-    : tickRatio >= 1.2
-      ? "RSI/MACD momentum aligned; broker tick activity is above its recent average."
-      : "RSI/MACD momentum evaluated; broker tick activity is not elevated (supporting evidence is weak).";
+  const momentumNote = (aligned ? "RSI/MACD momentum is aligned." : "RSI/MACD momentum is not aligned.") +
+    (tickRatio == null ? " Tick-activity confirmation is unavailable." :
+      tickRatio >= 1.2 ? " Broker tick activity is above its recent average." :
+      " Broker tick activity is not elevated (supporting evidence is weak).");
 
   const common = {
     momentum: { aligned, rsi: rsiNow, rsiPrevious: rsiPrev, macd: macdNow.line, histogram: macdNow.histogram, histogramPrevious: macdPrev.histogram, tickVolumeRatio: tickRatio, note: momentumNote },
@@ -92,12 +91,6 @@ export function buildTradeSetup(input: TradeCandle[], options: { lookback?: numb
     breakoutClose: round(last.c),
     asOf: last.t,
     methodology: "20-bar prior range; breakout close must clear the range by 0.10 ATR; momentum requires RSI direction/threshold plus MACD zero-line and rising/falling histogram alignment. Tick volume is optional broker activity context. Entry is a stop trigger beyond the confirmation candle; targets are fixed R multiples. Not a probability or forecast.",
-  };
-  if (!breakout) return {
-    ...empty("WAIT_FOR_BREAKOUT", aligned ? "Momentum is aligned, but price has not closed beyond the prior range." : "No confirmed range breakout. Wait; do not anticipate the move."),
-    ...common,
-    momentum: { ...common.momentum, note: momentumNote },
-    rationale: ["No completed candle close beyond the prior 20-bar high/low plus the ATR buffer.", aligned ? "Momentum is aligned, but there is no breakout trigger." : "RSI/MACD do not currently meet the directional momentum rules."],
   };
   const maxSignalAgeMs = options.maxSignalAgeMs ?? Number.POSITIVE_INFINITY;
   const ageMs = Date.now() - Date.parse(last.t);
@@ -110,6 +103,12 @@ export function buildTradeSetup(input: TradeCandle[], options: { lookback?: numb
       rationale: ["Signal data is stale (" + Math.round(ageMs / 3_600_000) + " hours since the latest completed candle).", "Historical breakout conditions are not a current entry instruction."],
     };
   }
+  if (!breakout) return {
+    ...empty("WAIT_FOR_BREAKOUT", aligned ? "Momentum is aligned, but price has not closed beyond the prior range." : "No confirmed range breakout. Wait; do not anticipate the move."),
+    ...common,
+    momentum: { ...common.momentum, note: momentumNote },
+    rationale: ["No completed candle close beyond the prior 20-bar high/low plus the ATR buffer.", aligned ? "Momentum is aligned, but there is no breakout trigger." : "RSI/MACD do not currently meet the directional momentum rules."],
+  };
   if (!aligned) return {
     ...empty("WAIT_FOR_MOMENTUM", "Price broke the range, but RSI and MACD do not confirm direction."),
     ...common,
