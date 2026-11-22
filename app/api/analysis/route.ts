@@ -56,7 +56,7 @@ async function fetchStoredHistory(symbol: SymbolCode, timeframe: DbTimeframe): P
   url.searchParams.set("symbol", "eq." + symbol);
   url.searchParams.set("timeframe", "eq." + timeframe);
   url.searchParams.set("source", "eq.BiQuote");
-  url.searchParams.set("order", "candle_open.asc");
+  url.searchParams.set("order", "candle_open.desc");
   url.searchParams.set("limit", String(MAX_CANDLES));
 
   const response = await fetch(url, {
@@ -69,8 +69,12 @@ async function fetchStoredHistory(symbol: SymbolCode, timeframe: DbTimeframe): P
       response.status + "): " + (await response.text()).slice(0, 300));
   }
 
-  const rows = await response.json() as StoredCandleRow[];
-  if (!Array.isArray(rows)) throw new Error("Stored history response was not an array");
+  const fetchedRows = await response.json() as StoredCandleRow[];
+  if (!Array.isArray(fetchedRows)) throw new Error("Stored history response was not an array");
+  // Supabase applies the row limit after ordering. Fetch newest candles first,
+  // then reverse locally so indicators receive chronological input. Ascending
+  // order here would silently analyze the oldest 1,000 candles once history grows.
+  const rows = [...fetchedRows].reverse();
 
   const candles: TechnicalCandle[] = [];
   let rejectedRows = 0;
