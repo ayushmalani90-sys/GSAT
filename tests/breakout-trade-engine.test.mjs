@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
 
-const source = await readFile(new URL("../lib/breakout-trade-engine.ts", import.meta.url), "utf8");
+const referenceSource = await readFile(new URL("../lib/technical-reference.ts", import.meta.url), "utf8");
+const referenceCompiled = ts.transpileModule(referenceSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const referenceUrl = "data:text/javascript;base64," + Buffer.from(referenceCompiled).toString("base64");
+let source = await readFile(new URL("../lib/breakout-trade-engine.ts", import.meta.url), "utf8");
+source = source.replace('import { atr, macd, rsi } from "./technical-reference";', `const { atr, macd, rsi } = await import("${referenceUrl}");`);
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
