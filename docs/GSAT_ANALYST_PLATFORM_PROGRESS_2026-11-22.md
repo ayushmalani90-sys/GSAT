@@ -26,7 +26,8 @@ Production branch remains `main`; no changes from this branch have been promoted
 - Preview-only Vercel environment variables for the Supabase project URL and public read-only key were added to branch `gsat-analyst-platform`; no production environment variables were changed.
 
 ## Not yet completed
-- Preview build/runtime validation is pending.
+- Vercel preview build for commit `0995172faeb80a2c6fe7f7e67ae1bec0219e2438` completed successfully; Next.js compilation and TypeScript checks passed. Preview URL: `https://gsat-lwq4ujert-ayushmalani90-1416s-projects.vercel.app`.
+- Database RLS was tested as the `anon` role: all eight BiQuote symbol/timeframe partitions are readable (673/288/212/505 candles per symbol), while the private `research` schema is not granted to anon. A live HTTP smoke test of the preview `/api/analysis` route is still outstanding.
 - MetalCharts API key and import shared secret have not been supplied/configured. No external data rows have been imported.
 - Stored-history analysis may return 502 if a symbol/timeframe has no valid stored rows; it intentionally does not silently fall back to a live unpersisted feed.
 - Current database coverage remains limited, especially intraday; deeper backtesting needs a longer licensed dataset.
