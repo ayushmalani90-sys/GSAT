@@ -20,7 +20,7 @@
 | XAU | 47,174 | 11,800 | 3,191 | 623 | 62,788 |
 | Total | 94,345 | 23,600 | 6,382 | 1,246 | 125,573 |
 
-The coverage query returned 125,570 rows at the time of verification; the import audit's inserted/updated counters differ by three because of conflict-return accounting. The table count and unique key are authoritative. Re-run the notebook coverage query before relying on exact counts.
+The coverage query returned 125,573 unique rows, matching the insert count. The 1,222 upserts are repeat writes caused by intentional overlap between the initial smoke test and the full backfill.
 
 All rows passed OHLC validation (0 invalid rows). The provider volume field is stored and explicitly labelled `dukascopy_tick_volume`; it is NOT exchange-traded volume.
 
