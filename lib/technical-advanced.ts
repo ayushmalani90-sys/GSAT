@@ -1,4 +1,5 @@
 import { atr } from "./technical-reference";
+import { scoreMacdState } from "./technical-interpretation";
 import { analyze, type TechnicalAnalysis, type TechnicalCandle, type Level } from "./technical";
 
 type Pivot = {
@@ -101,7 +102,7 @@ export function verifiedSupportResistance(candles: TechnicalCandle[], current: n
   return {
     supports: clusterLevels(pivots, sorted, current, "support", tolerance),
     resistances: clusterLevels(pivots, sorted, current, "resistance", tolerance),
-    method: "Confirmed 3-left/3-right swing pivots clustered with ATR-normalized tolerance. Strength uses touches, post-pivot reaction, recency and prominence; proximity is reported separately and does not increase strength. Broker tick count is not treated as traded volume.",
+    method: "Confirmed 3-left/3-right swing pivots clustered with ATR-normalized tolerance. Strength is a heuristic ranking from touches, post-pivot reaction, recency and prominence, not a probability; proximity is reported separately. Broker tick count is not traded volume.",
   };
 }
 
@@ -275,7 +276,7 @@ export function verifiedVolumeProfile(candles: TechnicalCandle[], bins = 24) {
     totalWeight: round(totalWeight, 4),
     source,
     interpretation: "POC " + poc + "; 70% value area " + valueAreaLow + "–" + valueAreaHigh +
-      ". Uses " + source + " distributed across each candle's traded price range. This is a broker-feed approximation, not centralized exchange volume-at-price.",
+      ". Uses " + source + " allocated uniformly across each candle's high-low range. This is a broker-feed approximation, not observed volume-at-price or centralized exchange volume.",
   };
 }
 
@@ -352,6 +353,7 @@ function calculateVerifiedConfluence(args: {
   ema50: number | null;
   ema200: number | null;
   rsi14: number | null;
+  macdLine: number | null;
   macdHistogram: number | null;
   patterns: ReturnType<typeof verifiedPatterns>;
 }): TechnicalAnalysis["confluence"] {
@@ -362,22 +364,18 @@ function calculateVerifiedConfluence(args: {
   const emaWeight = 25 * emaScores.length / 3;
   components.push({ name: "EMA structure", weight: emaWeight, score: emaScores.length ? emaScores.reduce<number>((sum, value) => sum + value, 0) / emaScores.length : null, contribution: 0 });
   components.push({ name: "RSI", weight: 15, score: args.rsi14 == null ? null : args.rsi14 > 70 || args.rsi14 < 30 ? 50 : args.rsi14 > 50 ? 100 : args.rsi14 < 50 ? 0 : 50, contribution: 0 });
-  components.push({ name: "MACD", weight: 20, score: args.macdHistogram == null ? null : args.macdHistogram > 0 ? 100 : args.macdHistogram < 0 ? 0 : 50, contribution: 0 });
+  components.push({ name: "MACD trend + signal alignment", weight: 20, score: scoreMacdState(args.macdLine, args.macdHistogram), contribution: 0 });
 
-  const patternScore = args.patterns.length
-    ? args.patterns.reduce((sum, pattern) => sum + (pattern.direction === "Bullish" ? 100 : pattern.direction === "Bearish" ? 0 : 50) * pattern.confidence, 0) /
-      args.patterns.reduce((sum, pattern) => sum + pattern.confidence, 0)
-    : null;
-  // No detected candle pattern is missing evidence, not a neutral directional signal.
-  // Keep the 15-point component weight in the denominator so coverage falls when absent.
-  components.push({ name: "Price action", weight: 15, score: patternScore, contribution: 0 });
+  // Candlestick geometry is displayed as context, but its heuristic quality score
+  // is not a validated probability and is excluded from directional confluence.
+  components.push({ name: "Candlestick pattern context (not directionally scored)", weight: 0, score: null, contribution: 0 });
 
   // S/R, Fibonacci and Volume Profile are deliberately not assigned directional
   // weight from proximity alone. They remain context until a validated reaction,
   // breakout/retest or value-area acceptance model exists.
   components.push({ name: "Support / resistance context (not directionally scored)", weight: 0, score: null, contribution: 0 });
 
-  const scoringBaseWeight = 75; // EMA 25 + RSI 15 + MACD 20 + price action 15.
+  const scoringBaseWeight = 60; // EMA 25 + RSI 15 + MACD 20; unvalidated pattern geometry is excluded.
   const usable = components.filter(component => component.score != null && component.weight > 0);
   const weightSum = usable.reduce((sum, component) => sum + component.weight, 0);
   const weightedSum = usable.reduce((sum, component) => sum + (component.score ?? 0) * component.weight, 0);
@@ -395,7 +393,7 @@ function calculateVerifiedConfluence(args: {
     coverage,
     components,
     interpretation: "Directional confluence is " + score + "/100 (" + label + ") with " + coverage +
-      "% evidence coverage. EMA weight is reduced when one or more EMA periods are unavailable. ATR is volatility only; S/R proximity, Fibonacci location and Volume Profile location are not treated as directional signals.",
+      "% evidence coverage. EMA weight is reduced when a period lacks the 1% seed-decay warm-up; RSI extremes are not reversal signals by themselves; MACD scoring requires zero-line and signal-line alignment. Candlestick geometry is context only. ATR is volatility only; S/R proximity, Fibonacci location and tick-volume profile are not directional signals.",
   };
 }
 
@@ -417,6 +415,7 @@ export function analyzeVerified(candles: TechnicalCandle[]): TechnicalAnalysis {
     ema50: base.ema.ema50,
     ema200: base.ema.ema200,
     rsi14: base.momentum.rsi14,
+    macdLine: base.momentum.macd,
     macdHistogram: base.momentum.macdHistogram,
     patterns,
   });
@@ -430,8 +429,8 @@ export function analyzeVerified(candles: TechnicalCandle[]): TechnicalAnalysis {
     confluence,
     overall: {
       bias,
-      summary: bias + " technical posture from EMA structure, RSI, MACD and completed-candle price action. Directional confluence is " +
-        confluence.score + "/100 with " + confluence.coverage + "% evidence coverage. ATR is volatility only; S/R, Fibonacci and Volume Profile remain contextual until their directional confirmation rules are validated. This is not a price prediction.",
+      summary: bias + " technical posture from EMA structure, RSI and MACD trend/signal alignment. Directional confluence is " +
+        confluence.score + "/100 with " + confluence.coverage + "% evidence coverage. Candlestick patterns are displayed as unscored context; ATR is volatility only; S/R, Fibonacci and tick-volume profile remain contextual. This is not a price prediction.",
     },
   };
 }
