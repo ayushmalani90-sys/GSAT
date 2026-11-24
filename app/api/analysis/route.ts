@@ -10,6 +10,7 @@ const TIMEFRAMES = ["15m", "1H", "4H", "1D"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
 type SymbolCode = "XAUUSD" | "XAGUSD";
 const MAX_CANDLES = 1000;
+const PROVIDER_ROLLING_WINDOW: Record<Timeframe, number> = { "15m": 192, "1H": 168, "4H": 180, "1D": 500 };
 const TF_AGGREGATION: Record<Timeframe, "15m" | "1h" | "4h" | "1d"> = { "15m": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
 
 async function fetchHistory(symbol: SymbolCode, interval: string): Promise<TechnicalCandle[]> {
@@ -45,11 +46,24 @@ async function fetchBiquoteTick(symbol: SymbolCode) {
   return data;
 }
 
+function analyzeWithHistory(candles: TechnicalCandle[]) {
+  const sorted = [...candles].sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
+  return {
+    ...analyzeVerified(sorted),
+    historyWindow: {
+      firstClosedCandleAt: sorted[0]?.t ?? null,
+      lastClosedCandleAt: sorted.at(-1)?.t ?? null,
+      sampleCount: sorted.length,
+      ema200Ready: sorted.length >= 200,
+    },
+  };
+}
+
 async function buildMtf(symbol: SymbolCode) {
-  const out: Record<string, ReturnType<typeof analyzeVerified>> = {};
+  const out: Record<string, ReturnType<typeof analyzeWithHistory>> = {};
   for (const tf of TIMEFRAMES) {
     const candles = await fetchHistory(symbol, TF_AGGREGATION[tf]);
-    out[tf] = analyzeVerified(candles);
+    out[tf] = analyzeWithHistory(candles);
   }
   return out;
 }
@@ -66,21 +80,21 @@ export async function GET(request: Request) {
       fetchBiquoteTick("XAUUSD"), fetchBiquoteTick("XAGUSD"),
       buildMtf("XAUUSD"), buildMtf("XAGUSD"),
     ]);
-    const gold = analyzeVerified(goldCandles), silver = analyzeVerified(silverCandles);
+    const gold = analyzeWithHistory(goldCandles), silver = analyzeWithHistory(silverCandles);
     const sourceMode = "biquote-native-timeframe";
     return NextResponse.json({
       source: ANALYSIS_SOURCE_POLICY.liveQuotes,
       dataArchitecture: sourceMode,
       generatedAt: new Date().toISOString(), timeframe,
       feed: { gold: { ...goldTick, price: goldTick.mid, source: "BiQuote" }, silver: { ...silverTick, price: silverTick.mid, source: "BiQuote" } },
-      history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, target: MAX_CANDLES },
+      history: { goldSamples: goldCandles.length, silverSamples: silverCandles.length, requestedLimit: MAX_CANDLES, documentedProviderRollingWindow: PROVIDER_ROLLING_WINDOW[timeframe], goldWindow: gold.historyWindow, silverWindow: silver.historyWindow },
       gold: { intraday: gold }, silver: { intraday: silver },
       mtf: { gold: goldMtf, silver: silverMtf },
       methodology: {
         note: analysisSourceNote(),
         indicators: "EMA 20/50/200 use close prices with SMA-seeded EMA recursion; RSI 14 uses Wilder RMA of gains/losses; MACD uses EMA 12/26 and EMA 9 signal; ATR 14 uses True Range smoothed with Wilder RMA.",
         advanced: "Structural zones use confirmed pivots and distance-independent strength; Fibonacci uses the latest qualifying alternating confirmed swing; Volume Profile distributes broker/tick volume across candle ranges and calculates a 70% value area; candlestick quality is geometric and not a win probability.",
-        dataQuality: "Only completed BiQuote candles are analyzed. Historical requests paginate only through explicit BiQuote nextCursor/next_cursor fields and never infer pagination. OANDA is not used for calculations.",
+        dataQuality: "Only completed BiQuote candles are analyzed. BiQuote documents rolling OHLC windows (M15 192, H1 168, H4 180, D1 500), not an archive. Requests cannot manufacture older history; EMA200 remains unavailable on timeframes with fewer than 200 closed candles. First/last closed-candle timestamps are returned for audit. OANDA is not used for calculations.",
         display: "TradingView OANDA widgets remain display-only. No OANDA API is used.",
       },
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
